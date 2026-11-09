@@ -1,0 +1,6327 @@
+
+<!doctype html>
+<html lang="zh" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="[ECCV 2026][VLM Efficiency][视觉 token 剪枝] 本文提出 CLSE(Cross-Layer Spectral Evolution),一个 training-free 的视觉 token 剪枝框架:不再用单层 attention 或特征幅值判断 token 重要性,而是把每层视觉 token 变换到频域、经高通滤波后度量其高频结构能量在相邻 LLM 层之间的相对变化量,变化剧烈的 token 被判为语义活跃并保留;在 LLaVA/Qwen2-VL/Video-LLaVA 等多个 MLLM、剪到 11%~33% token 的激进压缩下,精度保持显著优于 FastV、SparseVLM、PDrop 等。">
+      
+      
+      
+        <link rel="canonical" href="https://flyme45.github.io/Paper-Notes/ECCV2026/vlm_efficiency/spectral_evolution-guided_token_pruning_in_multimodal_large_language_models/">
+      
+      
+        <link rel="prev" href="../smart_when_is_it_actually_worth_expanding_a_speculative_tree/">
+      
+      
+        <link rel="next" href="../viq_text-aligned_visual_quantized_representations_at_any_resolution/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../../assets/favicon.svg">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+
+  <title>[论文解读] Spectral Evolution-Guided Token Pruning in Multimodal Large Language Models</title>
+
+    
+      <link rel="stylesheet" href="../../../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+    
+    
+      <link rel="stylesheet" href="../../../stylesheets/personal-attribution.css">
+    
+      <link rel="stylesheet" href="../../../stylesheets/extra.css">
+    
+    <script>__md_scope=new URL("../../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+
+<meta name="msvalidate.01" content="114D58B390D11BE882DB17E9BF9BF2F2" />
+
+
+
+
+<script data-site-url="https://flyme45.github.io/Paper-Notes/"
+        data-analytics-token="addbd9c7107a490092d47711a630688f">
+(function() {
+  var analyticsConfig = document.currentScript.dataset;
+  var canonicalHost = new URL(analyticsConfig.siteUrl).hostname;
+  if (window.location.hostname !== canonicalHost) return;
+
+  var beacon = document.createElement('script');
+  beacon.src = 'https://static.cloudflareinsights.com/beacon.min.js';
+  beacon.dataset.cfBeacon = JSON.stringify({
+    token: analyticsConfig.analyticsToken
+  });
+  document.head.appendChild(beacon);
+})();
+</script>
+
+
+
+<meta name="robots" content="index,follow,max-snippet:180,max-image-preview:large" />
+<meta name="googlebot" content="index,follow,max-snippet:180,max-image-preview:large" />
+
+
+<script>
+(function() {
+  function markChromeNoSnippet() {
+    var selectors = [
+      '.md-header', '.md-tabs', '.md-sidebar', '.md-search',
+      '.md-footer', '.md-source', '.md-top'
+    ];
+    selectors.forEach(function(selector) {
+      document.querySelectorAll(selector).forEach(function(node) {
+        node.setAttribute('data-nosnippet', '');
+      });
+    });
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', markChromeNoSnippet);
+  } else {
+    markChromeNoSnippet();
+  }
+})();
+</script>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<meta name="keywords" content="ECCV 2026, VLM Efficiency, 视觉 token 剪枝, 跨层谱演化, 频域高通滤波, training-free 加速, MLLM 推理" />
+
+
+<meta property="article:tag" content="ECCV 2026" />
+
+<meta property="article:tag" content="VLM Efficiency" />
+
+<meta property="article:tag" content="视觉 token 剪枝" />
+
+<meta property="article:tag" content="跨层谱演化" />
+
+<meta property="article:tag" content="频域高通滤波" />
+
+<meta property="article:tag" content="training-free 加速" />
+
+<meta property="article:tag" content="MLLM 推理" />
+
+
+
+
+<!-- OpenGraph & Twitter Card -->
+<meta property="og:site_name" content="📚 AI Paper Notes" />
+<meta property="og:type" content="article" />
+<meta property="og:url" content="https://flyme45.github.io/Paper-Notes/ECCV2026/vlm_efficiency/spectral_evolution-guided_token_pruning_in_multimodal_large_language_models/" />
+<meta property="og:title" content="[论文解读] Spectral Evolution-Guided Token Pruning in Multimodal Large Language Models" />
+<meta property="og:description" content="[ECCV 2026][VLM Efficiency][视觉 token 剪枝] 本文提出 CLSE(Cross-Layer Spectral Evolution),一个 training-free 的视觉 token 剪枝框架:不再用单层 attention 或特征幅值判断 token 重要性,而是把每层视觉 token 变换到频域、经高通滤波后度量其高频结构能量在相邻 LLM 层之间的相对变化量,变化剧烈的 token 被判为语义活跃并保留;在 LLaVA/Qwen2-VL/Video-LLaVA 等多个 MLLM、剪到 11%~33% token 的激进压缩下,精度保持显著优于 FastV、SparseVLM、PDrop 等。" />
+<meta name="twitter:card" content="summary" />
+<meta name="twitter:title" content="[论文解读] Spectral Evolution-Guided Token Pruning in Multimodal Large Language Models" />
+<meta name="twitter:description" content="[ECCV 2026][VLM Efficiency][视觉 token 剪枝] 本文提出 CLSE(Cross-Layer Spectral Evolution),一个 training-free 的视觉 token 剪枝框架:不再用单层 attention 或特征幅值判断 token 重要性,而是把每层视觉 token 变换到频域、经高通滤波后度量其高频结构能量在相邻 LLM 层之间的相对变化量,变化剧烈的 token 被判为语义活跃并保留;在 LLaVA/Qwen2-VL/Video-LLaVA 等多个 MLLM、剪到 11%~33% token 的激进压缩下,精度保持显著优于 FastV、SparseVLM、PDrop 等。" />
+
+
+<!-- JSON-LD: Organization (site-wide entity; referenced by @id elsewhere) -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "Organization",
+  "@id": "https://papernotes.org/#organization",
+  "name": "AI Paper Notes",
+  "alternateName": "论文笔记",
+  "url": "https://papernotes.org/",
+  "sameAs": [
+    "https://github.com/zhaoyang97/Paper-Notes",
+    "https://en.papernotes.org/"
+  ]
+}
+</script>
+
+<!-- JSON-LD: ScholarlyArticle (paper page) -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "ScholarlyArticle",
+  "name": "[\u8bba\u6587\u89e3\u8bfb] Spectral Evolution-Guided Token Pruning in Multimodal Large Language Models",
+  "headline": "[\u8bba\u6587\u89e3\u8bfb] Spectral Evolution-Guided Token Pruning in Multimodal Large Language Models",
+  "description": "[ECCV 2026][VLM Efficiency][\u89c6\u89c9 token \u526a\u679d] \u672c\u6587\u63d0\u51fa CLSE(Cross-Layer Spectral Evolution),\u4e00\u4e2a training-free \u7684\u89c6\u89c9 token \u526a\u679d\u6846\u67b6:\u4e0d\u518d\u7528\u5355\u5c42 attention \u6216\u7279\u5f81\u5e45\u503c\u5224\u65ad token \u91cd\u8981\u6027,\u800c\u662f\u628a\u6bcf\u5c42\u89c6\u89c9 token \u53d8\u6362\u5230\u9891\u57df\u3001\u7ecf\u9ad8\u901a\u6ee4\u6ce2\u540e\u5ea6\u91cf\u5176\u9ad8\u9891\u7ed3\u6784\u80fd\u91cf\u5728\u76f8\u90bb LLM \u5c42\u4e4b\u95f4\u7684\u76f8\u5bf9\u53d8\u5316\u91cf,\u53d8\u5316\u5267\u70c8\u7684 token \u88ab\u5224\u4e3a\u8bed\u4e49\u6d3b\u8dc3\u5e76\u4fdd\u7559;\u5728 LLaVA/Qwen2-VL/Video-LLaVA \u7b49\u591a\u4e2a MLLM\u3001\u526a\u5230 11%~33% token \u7684\u6fc0\u8fdb\u538b\u7f29\u4e0b,\u7cbe\u5ea6\u4fdd\u6301\u663e\u8457\u4f18\u4e8e FastV\u3001SparseVLM\u3001PDrop \u7b49\u3002",
+  "url": "https://flyme45.github.io/Paper-Notes/ECCV2026/vlm_efficiency/spectral_evolution-guided_token_pruning_in_multimodal_large_language_models/",
+  "mainEntityOfPage": "https://flyme45.github.io/Paper-Notes/ECCV2026/vlm_efficiency/spectral_evolution-guided_token_pruning_in_multimodal_large_language_models/",
+  "inLanguage": "zh-CN",
+  "isAccessibleForFree": true,
+  "learningResourceType": "AI paper note",
+  "genre": "论文解读",
+  
+  "keywords": "ECCV 2026, VLM Efficiency, \u89c6\u89c9 token \u526a\u679d, \u8de8\u5c42\u8c31\u6f14\u5316, \u9891\u57df\u9ad8\u901a\u6ee4\u6ce2, training-free \u52a0\u901f, MLLM \u63a8\u7406",
+  "about": [
+    { "@type": "Thing", "name": "ECCV 2026" },
+    { "@type": "Thing", "name": "VLM Efficiency" },
+    { "@type": "Thing", "name": "\u89c6\u89c9 token \u526a\u679d" },
+    { "@type": "Thing", "name": "\u8de8\u5c42\u8c31\u6f14\u5316" },
+    { "@type": "Thing", "name": "\u9891\u57df\u9ad8\u901a\u6ee4\u6ce2" },
+    { "@type": "Thing", "name": "training-free \u52a0\u901f" },
+    { "@type": "Thing", "name": "MLLM \u63a8\u7406" }
+  ],
+  
+  "datePublished": "2026-10-03",
+  "dateModified": "2026-10-03",
+  "author": { "@id": "https://papernotes.org/#organization" },
+  "publisher": { "@id": "https://papernotes.org/#organization" }
+}
+</script>
+
+
+<!-- JSON-LD: BreadcrumbList -->
+
+
+
+
+
+
+
+
+
+
+  
+  
+    
+    
+      
+    
+  
+
+  
+  
+    
+    
+      
+    
+  
+
+  
+  
+    
+    
+  
+
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  "itemListElement": [
+    {
+      "@type": "ListItem",
+      "position": 1,
+      "name": "AI Paper Notes",
+      "item": "https://flyme45.github.io/Paper-Notes/"
+    },
+    {
+      "@type": "ListItem",
+      "position": 2,
+      "name": "\ud83c\udf9e\ufe0f ECCV2026",
+      "item": "https://flyme45.github.io/Paper-Notes/ECCV2026/"
+    },
+    {
+      "@type": "ListItem",
+      "position": 3,
+      "name": "\u751f\u6210\u4e0e\u591a\u6a21\u6001 (155)",
+      "item": "https://flyme45.github.io/Paper-Notes/ECCV2026/vlm_efficiency/"
+    },
+    {
+      "@type": "ListItem",
+      "position": 4,
+      "name": "Spectral Evolution-Guided Token Pruning in Multimodal Large Language Models",
+      "item": "https://flyme45.github.io/Paper-Notes/ECCV2026/vlm_efficiency/spectral_evolution-guided_token_pruning_in_multimodal_large_language_models/"
+    }
+  ]
+}
+</script>
+
+
+
+<!-- Lazy-load search worker: defer search_index.json download until user opens search -->
+<!-- Index is title-only (~7MB, slimmed by hooks/slim_search_index.py post-build) -->
+<!-- Mobile: redirect to Bing site search (no search index download at all) -->
+<!-- Desktop: create search worker lazily only when user focuses on search input -->
+<script>
+(function() {
+  var isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+
+  // ── Bilingual query expansion mapping (中↔英) ──
+  var P = [
+    "上下文学习|in-context learning","持续学习|continual learning","课程学习|curriculum learning",
+    "小样本学习|few-shot learning","零样本|zero-shot","元学习|meta-learning",
+    "模仿学习|imitation learning","主动学习|active learning","自监督学习|self-supervised learning",
+    "多任务学习|multi-task learning","迁移学习|transfer learning","强化学习|reinforcement learning",
+    "对比学习|contrastive learning","知识蒸馏|knowledge distillation","联邦学习|federated learning",
+    "微调|fine-tuning","预训练|pre-training","指令微调|instruction tuning",
+    "合成数据|synthetic data","数据增强|data augmentation",
+    "推理|reasoning","空间推理|spatial reasoning","视觉推理|visual reasoning",
+    "幻觉|hallucination","越狱攻击|jailbreak","对齐|alignment","奖励模型|reward model",
+    "偏好优化|preference optimization","推测解码|speculative decoding","长上下文|long context",
+    "知识编辑|knowledge editing","知识图谱|knowledge graph","代码生成|code generation",
+    "多智能体|multi-agent","具身智能|embodied ai","视觉定位|visual grounding",
+    "文生图|text-to-image","视频生成|video generation","新视角合成|novel view synthesis",
+    "运动生成|motion generation","鲁棒性|robustness","对抗攻击|adversarial attack",
+    "差分隐私|differential privacy","可解释性|interpretability","泛化|generalization",
+    "不确定性|uncertainty","异常检测|anomaly detection","因果推理|causal inference",
+    "基础模型|foundation model","世界模型|world model","扩散模型|diffusion model",
+    "目标检测|object detection","语义分割|semantic segmentation","实例分割|instance segmentation",
+    "图像分割|image segmentation","点云|point cloud","深度估计|depth estimation",
+    "光流|optical flow","姿态估计|pose estimation","图像复原|image restoration",
+    "图像生成|image generation","图像编辑|image editing","超分辨率|super-resolution",
+    "视频理解|video understanding","动作识别|action recognition","视觉问答|visual question answering",
+    "文生视频|text-to-video","语音识别|speech recognition","自动驾驶|autonomous driving",
+    "遥感|remote sensing","医学影像|medical imaging","模型压缩|model compression",
+    "量化|quantization","多模态|multi-modal","跨模态|cross-modal",
+    "图神经网络|graph neural network","注意力机制|attention mechanism",
+    "域适应|domain adaptation","领域泛化|domain generalization","分布外|out-of-distribution",
+    "开放词汇|open-vocabulary","人脸识别|face recognition","机器翻译|machine translation",
+    "情感分析|sentiment analysis","文档理解|document understanding","问答|question answering",
+    "轨迹预测|trajectory prediction","图像修复|image inpainting","去噪|denoising",
+    "模型剪枝|model pruning","参数高效微调|parameter-efficient fine-tuning",
+    "灾难性遗忘|catastrophic forgetting","3D目标检测|3d object detection",
+  ];
+  var M = {};
+  P.forEach(function(p) { var s = p.split('|'); M[s[0]] = s[1]; M[s[1]] = s[0]; });
+
+  function expand(q) {
+    var ql = q.toLowerCase().trim();
+    if (M[ql]) return q + ' ' + M[ql];
+    var extra = [], seen = {};
+    for (var t in M) {
+      if (ql.indexOf(t) !== -1 && !seen[M[t]]) { seen[M[t]] = true; extra.push(M[t]); }
+    }
+    return extra.length ? q + ' ' + extra.join(' ') : q;
+  }
+  window.__pnExpand = expand;
+
+  // ── Press Enter in the header search box → open the full /search/ results page ──
+  document.addEventListener('keydown', function(e) {
+    if (e.key !== 'Enter') return;
+    var t = e.target;
+    if (!t || !t.classList || !t.classList.contains('md-search__input')) return;
+    e.preventDefault(); e.stopPropagation();
+    var i = location.pathname.indexOf('/search/');
+    var b = i >= 0 ? location.pathname.slice(0, i + 1) : '/';
+    var v = t.value.trim();
+    location.href = b + 'search/' + (v ? '?q=' + encodeURIComponent(v) : '');
+  }, true);
+
+  // ── Mobile: disable search worker entirely, use Bing ──
+  if (isMobile) {
+    if (window.Worker) {
+      var origWorkerMobile = window.Worker;
+      window.Worker = function(url) {
+        if (typeof url === 'string' && url.indexOf('search') !== -1) {
+          return { postMessage: function(){}, terminate: function(){}, onmessage: null };
+        }
+        return new origWorkerMobile(url);
+      };
+    }
+    document.addEventListener('click', function(e) {
+      var el = e.target.closest('label[for="__search"], .md-search__icon, .md-header__button[data-md-component="search"]');
+      if (!el) return;
+      e.preventDefault(); e.stopPropagation();
+      var q = prompt('搜索论文笔记');
+      if (q && q.trim()) {
+        window.open('https://www.bing.com/search?q=site:papernotes.org+' + encodeURIComponent(q.trim()), '_blank');
+      }
+    }, true);
+    return;
+  }
+
+  // ── Desktop: lazy-load search worker (only download index when user opens search) ──
+  if (window.Worker) {
+    var OrigWorker = window.Worker;
+    window.Worker = function(url, opts) {
+      // Non-search workers: create immediately
+      if (typeof url !== 'string' || url.indexOf('search') === -1) {
+        return new OrigWorker(url, opts);
+      }
+
+      // Search worker: create a lazy proxy
+      var realWorker = null;
+      var queued = [];
+      var proxy = {
+        onmessage: null,
+        onerror: null,
+        terminate: function() { if (realWorker) realWorker.terminate(); },
+        postMessage: function(msg) {
+          // Sanitize + bilingual-expand the query before it reaches lunr.
+          if (msg && typeof msg.data === 'string' && msg.data.length > 0 && msg.data.length < 200) {
+            // Strip lunr query-syntax metacharacters. A literal ':' (field
+            // separator), '~' (fuzzy), '^' (boost) or '*' (wildcard) in the raw
+            // text makes lunr throw QueryParseError -> 0 results. This is why
+            // pasting a paper's full title like "Cog-RAG: Cognitive-Inspired ..."
+            // returned "no results": the ':' broke the query parser.
+            var cleaned = msg.data.replace(/[:~^*]/g, ' ').replace(/\s+/g, ' ').trim();
+            msg = Object.assign({}, msg, { data: expand(cleaned) });
+          }
+          if (realWorker) {
+            realWorker.postMessage(msg);
+          } else {
+            queued.push(msg);
+          }
+        },
+        addEventListener: function(type, fn) {
+          if (type === 'message') proxy.onmessage = fn;
+          else if (type === 'error') proxy.onerror = fn;
+        },
+        removeEventListener: function() {}
+      };
+
+      // Materialize the real worker (called once when user opens search)
+      function materialize() {
+        if (realWorker) return;
+        realWorker = new OrigWorker(url, opts);
+        realWorker.onmessage = function(e) {
+          if (typeof proxy.onmessage === 'function') proxy.onmessage(e);
+        };
+        realWorker.onerror = function(e) {
+          if (typeof proxy.onerror === 'function') proxy.onerror(e);
+        };
+        // Flush queued messages
+        for (var i = 0; i < queued.length; i++) realWorker.postMessage(queued[i]);
+        queued = [];
+      }
+
+      // Trigger worker creation when user opens search
+      function onSearchOpen() {
+        materialize();
+        // Clean up listeners after first trigger
+        document.removeEventListener('focusin', onFocusIn, true);
+        var cb = document.getElementById('__search');
+        if (cb) cb.removeEventListener('change', onSearchOpen);
+      }
+
+      function onFocusIn(e) {
+        if (e.target && e.target.classList && e.target.classList.contains('md-search__input')) {
+          onSearchOpen();
+        }
+      }
+
+      // Listen for search input focus or search checkbox toggle
+      document.addEventListener('focusin', onFocusIn, true);
+      var searchCheckbox = document.getElementById('__search');
+      if (searchCheckbox) {
+        searchCheckbox.addEventListener('change', onSearchOpen);
+      }
+
+      return proxy;
+    };
+    window.Worker.prototype = OrigWorker.prototype;
+  }
+})();
+</script>
+
+<!-- Add deep-search fallback link in search results (both mobile and desktop) -->
+<script>
+(function() {
+  // Inject a "全文深度搜索 via Bing" link at the bottom of search results.
+  //
+  // IMPORTANT: we must NOT use a MutationObserver on `.md-search` with
+  // subtree:true and then appendChild into `.md-search-result`, because the
+  // append mutates the observed subtree → triggers the observer again → infinite
+  // loop → tab OOM ("喔唷，崩溃啦 / Out of Memory"). Instead we listen to the
+  // search input's `input` event (which does NOT fire from our own DOM
+  // mutations) and debounce updates to the fallback link.
+  var lastQuery = null;
+  var scheduled = false;
+
+  function updateLink() {
+    scheduled = false;
+    var input = document.querySelector('.md-search__input');
+    var output = document.querySelector('.md-search-result');
+    if (!input || !output) return;
+
+    var query = input.value.trim();
+
+    // Only touch the DOM if query actually changed — avoids churn while user
+    // is typing and prevents redundant re-renders.
+    if (query === lastQuery) return;
+    lastQuery = query;
+
+    var existing = output.querySelector('.deep-search-link');
+    if (!query) {
+      if (existing) existing.remove();
+      return;
+    }
+
+    var encoded = encodeURIComponent(query);
+    var site = 'site:papernotes.org+';
+    var html =
+      '<a href="https://www.bing.com/search?q=' + site + encoded +
+      '" target="_blank" rel="noopener" style="color:var(--md-accent-fg-color);font-size:0.85rem;">' +
+      '🔍 全文深度搜索「' + query.replace(/</g, '&lt;').replace(/>/g, '&gt;') + '」(via Bing)</a>' +
+      '<span style="display:block;font-size:0.75rem;color:var(--md-default-fg-color--light);margin-top:2px;">' +
+      '站内搜索仅匹配标题、标签和关键词，点此搜索全文内容</span>';
+
+    if (existing) {
+      existing.innerHTML = html;
+    } else {
+      var link = document.createElement('div');
+      link.className = 'deep-search-link';
+      link.style.cssText = 'padding:12px 16px;text-align:center;border-top:1px solid var(--md-default-fg-color--lightest);';
+      link.innerHTML = html;
+      output.appendChild(link);
+    }
+  }
+
+  function schedule() {
+    if (scheduled) return;
+    scheduled = true;
+    // Defer to rAF so we merge rapid events and run after Material renders
+    // its own results.
+    (window.requestAnimationFrame || function(fn){setTimeout(fn,16);})(updateLink);
+  }
+
+  document.addEventListener('DOMContentLoaded', function() {
+    var input = document.querySelector('.md-search__input');
+    if (!input) return;
+    input.addEventListener('input', schedule);
+    input.addEventListener('focus', schedule);
+  });
+})();
+</script>
+
+<!-- Promote near-exact title matches to the top of search results -->
+<script>
+(function() {
+  // Why: lunr (BM25) length-normalization penalizes long titles, so pasting a
+  // paper's FULL title can rank that paper BELOW shorter titles that merely
+  // share one common token (e.g. "hypergraph"). We re-rank the *rendered*
+  // results client-side: when one result's title covers almost all of the
+  // query's words, we move it to the top. We never use a MutationObserver
+  // (it would loop → OOM); we re-apply on the input event with a few short
+  // delayed passes so it survives Material's async re-render.
+  var SEP = /[\s\u200b\-\.\,\!\?\;\:\(\)\[\]\{\}\/\|]+/;
+  function toks(s) {
+    return (s || '').toLowerCase().split(SEP).filter(function(t){ return t.length >= 2; });
+  }
+  function promote() {
+    var input = document.querySelector('.md-search__input');
+    var list = document.querySelector('.md-search-result__list');
+    if (!input || !list) return;
+    var q = input.value.trim();
+    if (q.length < 8) return;                 // only long, title-like queries
+    var qToks = toks(q);
+    if (qToks.length < 3) return;             // leave short keyword searches alone
+    var qSet = {}; qToks.forEach(function(t){ qSet[t] = true; });
+    var items = [].slice.call(list.children).filter(function(el){
+      return el.classList && el.classList.contains('md-search-result__item');
+    });
+    if (items.length < 2) return;
+    var best = null, bestScore = 0;
+    items.forEach(function(it) {
+      var h = it.querySelector('h1, .md-search-result__title');
+      var tToks = toks(h ? h.textContent : '');
+      if (!tToks.length) return;
+      var tSet = {}; tToks.forEach(function(t){ tSet[t] = true; });
+      var hit = 0; qToks.forEach(function(t){ if (tSet[t]) hit++; });
+      var coverage = hit / qToks.length;      // share of query words found in title
+      if (coverage > bestScore) { bestScore = coverage; best = it; }
+    });
+    // Only reorder when the best title clearly IS what the user typed.
+    if (best && bestScore >= 0.8 && best !== list.firstElementChild) {
+      list.insertBefore(best, list.firstElementChild);
+    }
+  }
+  function schedule() {
+    [180, 420, 800].forEach(function(d){ setTimeout(promote, d); });
+  }
+  document.addEventListener('DOMContentLoaded', function() {
+    var input = document.querySelector('.md-search__input');
+    if (input) input.addEventListener('input', schedule);
+  });
+})();
+</script>
+
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="deep-purple">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#spectral-evolution-guided-token-pruning-in-multimodal-large-language-models" class="md-skip">
+          跳转至
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+
+<header class="md-header" data-md-component="header" data-nosnippet>
+  <nav class="md-header__inner md-grid" aria-label="页眉">
+    <a href="../../.." title="📚 AI Paper Notes" class="md-header__button md-logo" aria-label="📚 AI Paper Notes" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 21.5c-1.35-.85-3.8-1.5-5.5-1.5-1.65 0-3.35.3-4.75 1.05-.1.05-.15.05-.25.05-.25 0-.5-.25-.5-.5V6c.6-.45 1.25-.75 2-1 1.11-.35 2.33-.5 3.5-.5 1.95 0 4.05.4 5.5 1.5 1.45-1.1 3.55-1.5 5.5-1.5 1.17 0 2.39.15 3.5.5.75.25 1.4.55 2 1v14.6c0 .25-.25.5-.5.5-.1 0-.15 0-.25-.05-1.4-.75-3.1-1.05-4.75-1.05-1.7 0-4.15.65-5.5 1.5M12 8v11.5c1.35-.85 3.8-1.5 5.5-1.5 1.2 0 2.4.15 3.5.5V7c-1.1-.35-2.3-.5-3.5-.5-1.7 0-4.15.65-5.5 1.5m1 3.5c1.11-.68 2.6-1 4.5-1 .91 0 1.76.09 2.5.28V9.23c-.87-.15-1.71-.23-2.5-.23q-2.655 0-4.5.84zm4.5.17c-1.71 0-3.21.26-4.5.79v1.69c1.11-.65 2.6-.99 4.5-.99 1.04 0 1.88.08 2.5.24v-1.5c-.87-.16-1.71-.23-2.5-.23m2.5 2.9c-.87-.16-1.71-.24-2.5-.24-1.83 0-3.33.27-4.5.8v1.69c1.11-.66 2.6-.99 4.5-.99 1.04 0 1.88.08 2.5.24z"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            📚 AI Paper Notes
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              [论文解读] Spectral Evolution-Guided Token Pruning in Multimodal Large Language Models
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="deep-purple"  aria-label="切换暗色模式"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="切换暗色模式" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 7a5 5 0 0 1 5 5 5 5 0 0 1-5 5 5 5 0 0 1-5-5 5 5 0 0 1 5-5m0 2a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3m0-7 2.39 3.42C13.65 5.15 12.84 5 12 5s-1.65.15-2.39.42zM3.34 7l4.16-.35A7.2 7.2 0 0 0 5.94 8.5c-.44.74-.69 1.5-.83 2.29zm.02 10 1.76-3.77a7.131 7.131 0 0 0 2.38 4.14zM20.65 7l-1.77 3.79a7.02 7.02 0 0 0-2.38-4.15zm-.01 10-4.14.36c.59-.51 1.12-1.14 1.54-1.86.42-.73.69-1.5.83-2.29zM12 22l-2.41-3.44c.74.27 1.55.44 2.41.44.82 0 1.63-.17 2.37-.44z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="deep-purple"  aria-label="切换亮色模式"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="切换亮色模式" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m17.75 4.09-2.53 1.94.91 3.06-2.63-1.81-2.63 1.81.91-3.06-2.53-1.94L12.44 4l1.06-3 1.06 3zm3.5 6.91-1.64 1.25.59 1.98-1.7-1.17-1.7 1.17.59-1.98L15.75 11l2.06-.05L18.5 9l.69 1.95zm-2.28 4.95c.83-.08 1.72 1.1 1.19 1.85-.32.45-.66.87-1.08 1.27C15.17 23 8.84 23 4.94 19.07c-3.91-3.9-3.91-10.24 0-14.14.4-.4.82-.76 1.27-1.08.75-.53 1.93.36 1.85 1.19-.27 2.86.69 5.83 2.89 8.02a9.96 9.96 0 0 0 8.02 2.89m-1.64 2.02a12.08 12.08 0 0 1-7.8-3.47c-2.17-2.19-3.33-5-3.49-7.82-2.81 3.14-2.7 7.96.31 10.98 3.02 3.01 7.84 3.12 10.98.31"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="搜索" placeholder="搜索" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="查找">
+        
+        <button type="reset" class="md-search__icon md-icon" title="清空当前内容" aria-label="清空当前内容" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            正在初始化搜索引擎
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/zhaoyang97/Paper-Notes" title="前往仓库" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    Star on GitHub
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+
+<nav class="md-tabs" aria-label="标签" data-md-component="tabs" data-nosnippet>
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  🏠 首页
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../CVPR2026/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  📷 CVPR2026
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../ICLR2026/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  🔬 ICLR2026
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../../" class="md-tabs__link">
+          
+  
+  
+    
+  
+  🎞️ ECCV2026
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../ACL2026/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  💬 ACL2026
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../ICML2026/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  🧪 ICML2026
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../AAAI2026/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  🤖 AAAI2026
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../NeurIPS2025/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  🧠 NeurIPS2025
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../ICCV2025/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  📹 ICCV2025
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../ICML2025/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  🧪 ICML2025
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../ACL2025/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  💬 ACL2025
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../CVPR2025/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  📷 CVPR2025
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../ECCV2024/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  🎞️ ECCV2024
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+  
+    
+    
+    <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" data-nosnippet >
+      <div class="md-sidebar__scrollwrap">
+        <div class="md-sidebar__inner">
+          
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="导航栏" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../../.." title="📚 AI Paper Notes" class="md-nav__button md-logo" aria-label="📚 AI Paper Notes" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 21.5c-1.35-.85-3.8-1.5-5.5-1.5-1.65 0-3.35.3-4.75 1.05-.1.05-.15.05-.25.05-.25 0-.5-.25-.5-.5V6c.6-.45 1.25-.75 2-1 1.11-.35 2.33-.5 3.5-.5 1.95 0 4.05.4 5.5 1.5 1.45-1.1 3.55-1.5 5.5-1.5 1.17 0 2.39.15 3.5.5.75.25 1.4.55 2 1v14.6c0 .25-.25.5-.5.5-.1 0-.15 0-.25-.05-1.4-.75-3.1-1.05-4.75-1.05-1.7 0-4.15.65-5.5 1.5M12 8v11.5c1.35-.85 3.8-1.5 5.5-1.5 1.2 0 2.4.15 3.5.5V7c-1.1-.35-2.3-.5-3.5-.5-1.7 0-4.15.65-5.5 1.5m1 3.5c1.11-.68 2.6-1 4.5-1 .91 0 1.76.09 2.5.28V9.23c-.87-.15-1.71-.23-2.5-.23q-2.655 0-4.5.84zm4.5.17c-1.71 0-3.21.26-4.5.79v1.69c1.11-.65 2.6-.99 4.5-.99 1.04 0 1.88.08 2.5.24v-1.5c-.87-.16-1.71-.23-2.5-.23m2.5 2.9c-.87-.16-1.71-.24-2.5-.24-1.83 0-3.33.27-4.5.8v1.69c1.11-.66 2.6-.99 4.5-.99 1.04 0 1.88.08 2.5.24z"/></svg>
+
+    </a>
+    📚 AI Paper Notes
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/zhaoyang97/Paper-Notes" title="前往仓库" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    Star on GitHub
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    🏠 首页
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+      
+        
+        
+      
+    
+    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
+      
+        
+  
+  
+  
+    <a href="../../../CVPR2026/" class="md-nav__link">
+      
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    📷 CVPR2026
+  
+
+    
+  </span>
+  
+  
+
+      
+        <span class="md-nav__icon md-icon"></span>
+      
+    </a>
+  
+
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+      
+        
+        
+      
+    
+    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
+      
+        
+  
+  
+  
+    <a href="../../../ICLR2026/" class="md-nav__link">
+      
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    🔬 ICLR2026
+  
+
+    
+  </span>
+  
+  
+
+      
+        <span class="md-nav__icon md-icon"></span>
+      
+    </a>
+  
+
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+      
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" checked>
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    🎞️ ECCV2026
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_4" id="__nav_4_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    🎞️ ECCV2026
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+      
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_4_2" id="__nav_4_2_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    LLM (15)
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_4_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    LLM (15)
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+      
+        
+        
+      
+    
+    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
+      
+        
+  
+  
+  
+    <a href="../../llm_agent/" class="md-nav__link">
+      
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    🦾 LLM Agent (4)
+  
+
+    
+  </span>
+  
+  
+
+      
+        <span class="md-nav__icon md-icon"></span>
+      
+    </a>
+  
+
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+      
+        
+        
+      
+    
+    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
+      
+        
+  
+  
+  
+    <a href="../../multi_agent/" class="md-nav__link">
+      
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    👥 Multi-Agent (1)
+  
+
+    
+  </span>
+  
+  
+
+      
+        <span class="md-nav__icon md-icon"></span>
+      
+    </a>
+  
+
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+      
+        
+        
+      
+    
+    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
+      
+        
+  
+  
+  
+    <a href="../../llm_safety/" class="md-nav__link">
+      
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    🔒 LLM 安全 (5)
+  
+
+    
+  </span>
+  
+  
+
+      
+        <span class="md-nav__icon md-icon"></span>
+      
+    </a>
+  
+
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+      
+        
+        
+      
+    
+    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
+      
+        
+  
+  
+  
+    <a href="../../hallucination/" class="md-nav__link">
+      
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    👻 幻觉检测 (2)
+  
+
+    
+  </span>
+  
+  
+
+      
+        <span class="md-nav__icon md-icon"></span>
+      
+    </a>
+  
+
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+      
+        
+        
+      
+    
+    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
+      
+        
+  
+  
+  
+    <a href="../../llm_pretraining/" class="md-nav__link">
+      
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    📚 预训练 (2)
+  
+
+    
+  </span>
+  
+  
+
+      
+        <span class="md-nav__icon md-icon"></span>
+      
+    </a>
+  
+
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+      
+        
+        
+      
+    
+    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
+      
+        
+  
+  
+  
+    <a href="../../llm_nlp/" class="md-nav__link">
+      
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    💬 LLM 其他 (1)
+  
+
+    
+  </span>
+  
+  
+
+      
+        <span class="md-nav__icon md-icon"></span>
+      
+    </a>
+  
+
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+      
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_4_3" id="__nav_4_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    LLM 应用 (2)
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_4_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    LLM 应用 (2)
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+      
+        
+        
+      
+    
+    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
+      
+        
+  
+  
+  
+    <a href="../../information_retrieval/" class="md-nav__link">
+      
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    🔍 信息检索/RAG (2)
+  
+
+    
+  </span>
+  
+  
+
+      
+        <span class="md-nav__icon md-icon"></span>
+      
+    </a>
+  
+
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+      
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4_4" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_4_4" id="__nav_4_4_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    生成与多模态 (155)
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_4_4_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_4_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    生成与多模态 (155)
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+      
+        
+        
+      
+    
+    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
+      
+        
+  
+  
+  
+    <a href="../../image_generation/" class="md-nav__link">
+      
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    🎨 图像生成 (56)
+  
+
+    
+  </span>
+  
+  
+
+      
+        <span class="md-nav__icon md-icon"></span>
+      
+    </a>
+  
+
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+      
+        
+        
+      
+    
+    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
+      
+        
+  
+  
+  
+    <a href="../../video_generation/" class="md-nav__link">
+      
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    🎬 视频生成 (24)
+  
+
+    
+  </span>
+  
+  
+
+      
+        <span class="md-nav__icon md-icon"></span>
+      
+    </a>
+  
+
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+      
+        
+        
+      
+    
+    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
+      
+        
+  
+  
+  
+    <a href="../../multimodal_vlm/" class="md-nav__link">
+      
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    🧩 多模态 VLM (39)
+  
+
+    
+  </span>
+  
+  
+
+      
+        <span class="md-nav__icon md-icon"></span>
+      
+    </a>
+  
+
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+      
+        
+        
+      
+    
+    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
+      
+        
+  
+  
+  
+    <a href="../../vlm_reasoning/" class="md-nav__link">
+      
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    🧠 VLM Reasoning (18)
+  
+
+    
+  </span>
+  
+  
+
+      
+        <span class="md-nav__icon md-icon"></span>
+      
+    </a>
+  
+
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+      
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4_4_5" checked>
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ⚡ VLM Efficiency (8)
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_4_4_5" id="__nav_4_4_5_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_4_4_5_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_4_4_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    ⚡ VLM Efficiency (8)
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../accelerating_multimodal_large_language_models_with_prior-corrected_token_reducti/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Accelerating Multimodal Large Language Models with Prior-Corrected Token Reduction
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../hsd_training-free_acceleration_for_document_parsing_vision-language_models_with_/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    HSD: Training-Free Acceleration for Document Parsing Vision-Language Models with Hierarchical Speculative Decoding
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../paying_more_attention_to_visual_tokens_in_self-evolving_large_multimodal_models/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Paying More Attention to Visual Tokens in Self-Evolving Large Multimodal Models
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../resilphase_plug-and-play_phase_mapping_and_noise-resilient_macro-trajectory_extr/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ResilPhase: Plug-and-Play Phase Mapping and Noise-Resilient Macro-Trajectory Extrapolation for Diffusion Acceleration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../smart_when_is_it_actually_worth_expanding_a_speculative_tree/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    SMART: When is it Actually Worth Expanding a Speculative Tree?
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Spectral Evolution-Guided Token Pruning in Multimodal Large Language Models
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Spectral Evolution-Guided Token Pruning in Multimodal Large Language Models
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="目录">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      目录
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        一句话总结
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        研究背景与动机
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        方法详解
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_7" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        实验关键数据
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_11" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        亮点与洞察
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_12" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        局限与展望
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_13" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        相关工作与启发
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_14" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        评分
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_15" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        相关论文
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../viq_text-aligned_visual_quantized_representations_at_any_resolution/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ViQ: Text-Aligned Visual Quantized Representations at Any Resolution
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../zero-shot_quantization_for_object_detectors_using_off-the-shelf_generative_model/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    GoodQ: 利用现成生成模型实现目标检测器的零样本量化
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+      
+        
+        
+      
+    
+    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
+      
+        
+  
+  
+  
+    <a href="../../audio_speech/" class="md-nav__link">
+      
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    🎵 音频/语音 (7)
+  
+
+    
+  </span>
+  
+  
+
+      
+        <span class="md-nav__icon md-icon"></span>
+      
+    </a>
+  
+
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+      
+        
+        
+      
+    
+    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
+      
+        
+  
+  
+  
+    <a href="../../aigc_detection/" class="md-nav__link">
+      
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    🔎 AIGC 检测 (3)
+  
+
+    
+  </span>
+  
+  
+
+      
+        <span class="md-nav__icon md-icon"></span>
+      
+    </a>
+  
+
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+      
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_4_5" id="__nav_4_5_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    视觉感知 (142)
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_4_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    视觉感知 (142)
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+      
+        
+        
+      
+    
+    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
+      
+        
+  
+  
+  
+    <a href="../../3d_vision/" class="md-nav__link">
+      
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    🧊 3D 视觉 (67)
+  
+
+    
+  </span>
+  
+  
+
+      
+        <span class="md-nav__icon md-icon"></span>
+      
+    </a>
+  
+
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+      
+        
+        
+      
+    
+    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
+      
+        
+  
+  
+  
+    <a href="../../object_detection/" class="md-nav__link">
+      
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    🎯 目标检测 (18)
+  
+
+    
+  </span>
+  
+  
+
+      
+        <span class="md-nav__icon md-icon"></span>
+      
+    </a>
+  
+
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+      
+        
+        
+      
+    
+    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
+      
+        
+  
+  
+  
+    <a href="../../segmentation/" class="md-nav__link">
+      
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ✂️ 语义分割 (14)
+  
+
+    
+  </span>
+  
+  
+
+      
+        <span class="md-nav__icon md-icon"></span>
+      
+    </a>
+  
+
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+      
+        
+        
+      
+    
+    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
+      
+        
+  
+  
+  
+    <a href="../../image_restoration/" class="md-nav__link">
+      
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    🖼️ 图像恢复 (12)
+  
+
+    
+  </span>
+  
+  
+
+      
+        <span class="md-nav__icon md-icon"></span>
+      
+    </a>
+  
+
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+      
+        
+        
+      
+    
+    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
+      
+        
+  
+  
+  
+    <a href="../../remote_sensing/" class="md-nav__link">
+      
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    🛰️ 遥感 (1)
+  
+
+    
+  </span>
+  
+  
+
+      
+        <span class="md-nav__icon md-icon"></span>
+      
+    </a>
+  
+
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+      
+        
+        
+      
+    
+    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
+      
+        
+  
+  
+  
+    <a href="../../human_understanding/" class="md-nav__link">
+      
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    🧑 人体理解 (18)
+  
+
+    
+  </span>
+  
+  
+
+      
+        <span class="md-nav__icon md-icon"></span>
+      
+    </a>
+  
+
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+      
+        
+        
+      
+    
+    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
+      
+        
+  
+  
+  
+    <a href="../../video_understanding/" class="md-nav__link">
+      
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    📹 视频理解 (12)
+  
+
+    
+  </span>
+  
+  
+
+      
+        <span class="md-nav__icon md-icon"></span>
+      
+    </a>
+  
+
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+      
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_4_6" id="__nav_4_6_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    决策与具身 (49)
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_4_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    决策与具身 (49)
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+      
+        
+        
+      
+    
+    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
+      
+        
+  
+  
+  
+    <a href="../../autonomous_driving/" class="md-nav__link">
+      
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    🚗 自动驾驶 (33)
+  
+
+    
+  </span>
+  
+  
+
+      
+        <span class="md-nav__icon md-icon"></span>
+      
+    </a>
+  
+
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+      
+        
+        
+      
+    
+    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
+      
+        
+  
+  
+  
+    <a href="../../robotics/" class="md-nav__link">
+      
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    🤖 机器人/具身智能 (15)
+  
+
+    
+  </span>
+  
+  
+
+      
+        <span class="md-nav__icon md-icon"></span>
+      
+    </a>
+  
+
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+      
+        
+        
+      
+    
+    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
+      
+        
+  
+  
+  
+    <a href="../../reinforcement_learning/" class="md-nav__link">
+      
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    🎮 强化学习 (1)
+  
+
+    
+  </span>
+  
+  
+
+      
+        <span class="md-nav__icon md-icon"></span>
+      
+    </a>
+  
+
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+      
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_4_7" id="__nav_4_7_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    基础与理论 (19)
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_4_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    基础与理论 (19)
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+      
+        
+        
+      
+    
+    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
+      
+        
+  
+  
+  
+    <a href="../../self_supervised/" class="md-nav__link">
+      
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    🔄 自监督/表示学习 (3)
+  
+
+    
+  </span>
+  
+  
+
+      
+        <span class="md-nav__icon md-icon"></span>
+      
+    </a>
+  
+
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+      
+        
+        
+      
+    
+    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
+      
+        
+  
+  
+  
+    <a href="../../optimization/" class="md-nav__link">
+      
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    📐 优化/理论 (2)
+  
+
+    
+  </span>
+  
+  
+
+      
+        <span class="md-nav__icon md-icon"></span>
+      
+    </a>
+  
+
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+      
+        
+        
+      
+    
+    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
+      
+        
+  
+  
+  
+    <a href="../../causal_inference/" class="md-nav__link">
+      
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    🔗 因果推理 (1)
+  
+
+    
+  </span>
+  
+  
+
+      
+        <span class="md-nav__icon md-icon"></span>
+      
+    </a>
+  
+
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+      
+        
+        
+      
+    
+    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
+      
+        
+  
+  
+  
+    <a href="../../interpretability/" class="md-nav__link">
+      
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    🔬 可解释性 (2)
+  
+
+    
+  </span>
+  
+  
+
+      
+        <span class="md-nav__icon md-icon"></span>
+      
+    </a>
+  
+
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+      
+        
+        
+      
+    
+    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
+      
+        
+  
+  
+  
+    <a href="../../model_compression/" class="md-nav__link">
+      
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    📦 模型压缩 (11)
+  
+
+    
+  </span>
+  
+  
+
+      
+        <span class="md-nav__icon md-icon"></span>
+      
+    </a>
+  
+
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+      
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_4_8" id="__nav_4_8_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    科学与跨学科 (21)
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_4_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    科学与跨学科 (21)
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+      
+        
+        
+      
+    
+    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
+      
+        
+  
+  
+  
+    <a href="../../medical_imaging/" class="md-nav__link">
+      
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    🏥 医学图像 (14)
+  
+
+    
+  </span>
+  
+  
+
+      
+        <span class="md-nav__icon md-icon"></span>
+      
+    </a>
+  
+
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+      
+        
+        
+      
+    
+    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
+      
+        
+  
+  
+  
+    <a href="../../ai_safety/" class="md-nav__link">
+      
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    🛡️ AI 安全 (7)
+  
+
+    
+  </span>
+  
+  
+
+      
+        <span class="md-nav__icon md-icon"></span>
+      
+    </a>
+  
+
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+      
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4_9" >
+        
+          
+          <label class="md-nav__link" for="__nav_4_9" id="__nav_4_9_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    其他 (17)
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_4_9_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4_9">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    其他 (17)
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+      
+        
+        
+      
+    
+    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
+      
+        
+  
+  
+  
+    <a href="../../others/" class="md-nav__link">
+      
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    📂 其他 (17)
+  
+
+    
+  </span>
+  
+  
+
+      
+        <span class="md-nav__icon md-icon"></span>
+      
+    </a>
+  
+
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+      
+        
+        
+      
+    
+    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
+      
+        
+  
+  
+  
+    <a href="../../../ACL2026/" class="md-nav__link">
+      
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    💬 ACL2026
+  
+
+    
+  </span>
+  
+  
+
+      
+        <span class="md-nav__icon md-icon"></span>
+      
+    </a>
+  
+
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+      
+        
+        
+      
+    
+    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
+      
+        
+  
+  
+  
+    <a href="../../../ICML2026/" class="md-nav__link">
+      
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    🧪 ICML2026
+  
+
+    
+  </span>
+  
+  
+
+      
+        <span class="md-nav__icon md-icon"></span>
+      
+    </a>
+  
+
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+      
+        
+        
+      
+    
+    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
+      
+        
+  
+  
+  
+    <a href="../../../AAAI2026/" class="md-nav__link">
+      
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    🤖 AAAI2026
+  
+
+    
+  </span>
+  
+  
+
+      
+        <span class="md-nav__icon md-icon"></span>
+      
+    </a>
+  
+
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+      
+        
+        
+      
+    
+    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
+      
+        
+  
+  
+  
+    <a href="../../../NeurIPS2025/" class="md-nav__link">
+      
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    🧠 NeurIPS2025
+  
+
+    
+  </span>
+  
+  
+
+      
+        <span class="md-nav__icon md-icon"></span>
+      
+    </a>
+  
+
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+      
+        
+        
+      
+    
+    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
+      
+        
+  
+  
+  
+    <a href="../../../ICCV2025/" class="md-nav__link">
+      
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    📹 ICCV2025
+  
+
+    
+  </span>
+  
+  
+
+      
+        <span class="md-nav__icon md-icon"></span>
+      
+    </a>
+  
+
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+      
+        
+        
+      
+    
+    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
+      
+        
+  
+  
+  
+    <a href="../../../ICML2025/" class="md-nav__link">
+      
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    🧪 ICML2025
+  
+
+    
+  </span>
+  
+  
+
+      
+        <span class="md-nav__icon md-icon"></span>
+      
+    </a>
+  
+
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+      
+        
+        
+      
+    
+    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
+      
+        
+  
+  
+  
+    <a href="../../../ACL2025/" class="md-nav__link">
+      
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    💬 ACL2025
+  
+
+    
+  </span>
+  
+  
+
+      
+        <span class="md-nav__icon md-icon"></span>
+      
+    </a>
+  
+
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+      
+        
+        
+      
+    
+    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
+      
+        
+  
+  
+  
+    <a href="../../../CVPR2025/" class="md-nav__link">
+      
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    📷 CVPR2025
+  
+
+    
+  </span>
+  
+  
+
+      
+        <span class="md-nav__icon md-icon"></span>
+      
+    </a>
+  
+
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+      
+        
+        
+      
+    
+    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
+      
+        
+  
+  
+  
+    <a href="../../../ECCV2024/" class="md-nav__link">
+      
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    🎞️ ECCV2024
+  
+
+    
+  </span>
+  
+  
+
+      
+        <span class="md-nav__icon md-icon"></span>
+      
+    </a>
+  
+
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+        </div>
+      </div>
+    </div>
+  
+  
+    
+    
+    <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" data-nosnippet >
+      <div class="md-sidebar__scrollwrap">
+        <div class="md-sidebar__inner">
+          
+
+<nav class="md-nav md-nav--secondary" aria-label="目录">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      目录
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        一句话总结
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        研究背景与动机
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        方法详解
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_7" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        实验关键数据
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_11" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        亮点与洞察
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_12" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        局限与展望
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_13" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        相关工作与启发
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_14" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        评分
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_15" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        相关论文
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+        </div>
+      </div>
+    </div>
+  
+
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+
+  
+  
+  
+  
+<aside class="paper-seo-summary" aria-label="论文摘要">
+  <p class="paper-seo-summary__desc">[ECCV 2026][VLM Efficiency][视觉 token 剪枝] 本文提出 CLSE(Cross-Layer Spectral Evolution),一个 training-free 的视觉 token 剪枝框架:不再用单层 attention 或特征幅值判断 token 重要性,而是把每层视觉 token 变换到频域、经高通滤波后度量其高频结构能量在相邻 LLM 层之间的相对变化量,变化剧烈的 token 被判为语义活跃并保留;在 LLaVA/Qwen2-VL/Video-LLaVA 等多个 MLLM、剪到 11%~33% token 的激进压缩下,精度保持显著优于 FastV、SparseVLM、PDrop 等。</p>
+  
+  <p class="paper-seo-summary__tags">标签：ECCV 2026 · VLM Efficiency · 视觉 token 剪枝 · 跨层谱演化 · 频域高通滤波 · training-free 加速 · MLLM 推理</p>
+  
+</aside>
+  
+
+
+                  
+
+  <nav class="md-tags" >
+    
+      
+      
+      
+      
+        <span class="md-tag">ECCV 2026</span>
+      
+    
+      
+      
+      
+      
+        <span class="md-tag">VLM Efficiency</span>
+      
+    
+      
+      
+      
+      
+        <span class="md-tag">视觉 token 剪枝</span>
+      
+    
+      
+      
+      
+      
+        <span class="md-tag">跨层谱演化</span>
+      
+    
+      
+      
+      
+      
+        <span class="md-tag">频域高通滤波</span>
+      
+    
+      
+      
+      
+      
+        <span class="md-tag">training-free 加速</span>
+      
+    
+      
+      
+      
+      
+        <span class="md-tag">MLLM 推理</span>
+      
+    
+  </nav>
+
+
+  
+  
+
+
+<h1 id="spectral-evolution-guided-token-pruning-in-multimodal-large-language-models">Spectral Evolution-Guided Token Pruning in Multimodal Large Language Models<a class="headerlink" href="#spectral-evolution-guided-token-pruning-in-multimodal-large-language-models" title="Permanent link">&para;</a></h1>
+<p><strong>会议</strong>: ECCV 2026<br />
+<strong>arXiv</strong>: <a href="https://arxiv.org/abs/2606.24165">2606.24165</a><br />
+<strong>代码</strong>: &lt;<a href="https://github.com/zjubinchen/CLSE&gt;">https://github.com/zjubinchen/CLSE&gt;</a><br />
+<strong>领域</strong>: LLM效率 / 多模态VLM<br />
+<strong>关键词</strong>: 视觉 token 剪枝, 跨层谱演化, 频域高通滤波, training-free 加速, MLLM 推理</p>
+<h2 id="_1">一句话总结<a class="headerlink" href="#_1" title="Permanent link">&para;</a></h2>
+<p>本文提出 CLSE(Cross-Layer Spectral Evolution),一个 training-free 的视觉 token 剪枝框架:不再用单层 attention 或特征幅值判断 token 重要性,而是把每层视觉 token 变换到频域、经高通滤波后度量其高频结构能量在相邻 LLM 层之间的相对变化量,变化剧烈的 token 被判为语义活跃并保留;在 LLaVA/Qwen2-VL/Video-LLaVA 等多个 MLLM、剪到 11%~33% token 的激进压缩下,精度保持显著优于 FastV、SparseVLM、PDrop 等。</p>
+<h2 id="_2">研究背景与动机<a class="headerlink" href="#_2" title="Permanent link">&para;</a></h2>
+<p><strong>领域现状</strong>:现代 MLLM 把 ViT 编码的几百上千个视觉 token 拼进 LLM 一起解码,高分辨率和视频场景下 token 数暴涨,自注意力对序列长度是二次复杂度,推理延迟和 KV cache 成为瓶颈。视觉 token 存在大量空间/时序冗余(相邻 patch、相邻帧高度相关),因此推理期剪掉冗余视觉 token 成为免训练加速的主流路线。</p>
+<p><strong>现有痛点</strong>:绝大多数 training-free 方法都依赖<strong>单层瞬时信号</strong>——attention 权重(FastV)、特征幅值、或 token 间相似度(DART/ToMe)。这些信号有两个硬伤:其一,attention 有明显的<strong>位置偏置</strong>,倾向于给拼接序列后半部分的视觉 token 打高分(受位置编码影响),即使那些区域并不语义关键;其二,静态幅值类方法忽略了一个 MLLM 解码的本质规律——视觉 token 表示会<strong>跨层结构化演化</strong>,从低层空间细节逐步抽象为高层语义(同时文本指令被融合进来)。</p>
+<p><strong>核心矛盾</strong>:token 的真实贡献体现在它「随深度如何被文本-视觉交互重塑」,而不是它在某一层的瞬时强度。用单层快照去估计一个本质上是「跨层动态」的量,天然就是错配的。</p>
+<p><strong>本文目标 + 切入角度</strong>:作者要找一个既稳定(不受位置偏置干扰)、又能刻画表示动态、还足够便宜(不能比 attention 提取更慢)的重要性判据。切入点来自频域视角:已有研究(FNet、Fourier-VLM 等)观察到 Transformer 浅层保留高频空间信息、深层强调低频语义结构,这种「depth-wise 谱漂移」正是多模态抽象过程的外在表现。</p>
+<p><strong>核心 idea</strong>:token 重要性 = 它的频域表示跨层演化的强度。对推理有意义的 token 在「细节→语义」的转变中表现出<strong>更强的谱重分布</strong>,而背景冗余 token 在频域里近乎静止。于是把「测幅值/attention」换成「测跨层谱演化」,就能更忠实地识别该保留哪些 token。</p>
+<h2 id="_3">方法详解<a class="headerlink" href="#_3" title="Permanent link">&para;</a></h2>
+<h3 id="_4">整体框架<a class="headerlink" href="#_4" title="Permanent link">&para;</a></h3>
+<p>CLSE 的核心是一个 token 重要性打分器:在 LLM decoder 早期,取相邻两层的视觉 token 表示,各自变换到频域、高通滤波后得到「高频结构能量图」,再计算这张能量图在两层之间的相对变化量作为每个 token 的 evolution intensity;按此分数 Top-K 硬剪枝,剪后的短序列送入后续所有层。整个过程无需训练、不改权重,是 plug-and-play 模块。</p>
+<pre class="mermaid"><code>%%{init: {'flowchart': {'rankSpacing': 24, 'nodeSpacing': 28, 'padding': 6, 'wrappingWidth': 400}}}%%
+flowchart TD
+    A["取相邻两层视觉&lt;br/&gt;token 表示 X^ℓ, X^(ℓ+1)"] --&gt; B["reshape 成空间图&lt;br/&gt;(H×W×d) 并做 2D FFT + fftshift"]
+    B --&gt; C["Gaussian 高通掩码 M&lt;br/&gt;抑制低频、保留局部结构"]
+    C --&gt; D["逆变换取幅值、&lt;br/&gt;通道平均 → 高频能量图 S_ℓ"]
+    D --&gt; E["跨层谱演化强度&lt;br/&gt;I = |S_(ℓ+1) − S_ℓ| / (S_ℓ + 均值 + ε)"]
+    E --&gt; F["按 I 做 Top-K 硬剪枝&lt;br/&gt;(默认 0→1 打分, 层 2 前剪)"]
+    F --&gt; G["短序列 [文本; 保留视觉]&lt;br/&gt;送入后续所有层"]
+    G -.可选.-&gt; H["CLSE-M: 召回 top 分数&lt;br/&gt;被剪 token 密度峰聚类合并"]</code></pre>
+<h3 id="_5">关键设计<a class="headerlink" href="#_5" title="Permanent link">&para;</a></h3>
+<p><strong>1. 高频结构能量而非特征幅值:用频域高通滤波隔离「局部结构」</strong></p>
+<p>痛点是幅值类信号会被 embedding 的绝对大小主导,且分不清「结构信息」和「低频全局背景」。CLSE 的第一步不测 token 的原始范数,而是测它的<strong>带限高频能量</strong>。把某层视觉 token <span class="arithmatex">\(\mathbf{X}^{\ell}\in\mathbb{R}^{N\times d}\)</span>(<span class="arithmatex">\(N=H\cdot W\)</span>)reshape 成空间特征图 <span class="arithmatex">\(\mathbf{X}^{\ell}_{2\mathrm{D}}\in\mathbb{R}^{H\times W\times d}\)</span>,做 2D FFT 并中心化:<span class="arithmatex">\(\widehat{\mathbf{X}}^{\ell}=\mathrm{fftshift}(\mathcal{F}(\mathbf{X}^{\ell}_{2\mathrm{D}}))\)</span>。然后乘一个 Gaussian <strong>高通</strong>掩码把中心(低频)压掉:</p>
+<div class="arithmatex">\[\mathbf{M}_{u,v}=1-\exp\!\left(-\frac{(u-c_u)^2+(v-c_v)^2}{2(r\cdot c_u)^2}\right)\]</div>
+<p>其中 <span class="arithmatex">\((c_u,c_v)\)</span> 是谱中心,<span class="arithmatex">\(r\)</span> 是截止比(默认 <span class="arithmatex">\(r{=}0.1\)</span>)。再逆变换取幅值、沿通道维平均,得到每个空间位置的高频能量 <span class="arithmatex">\(\mathbf{S}_\ell=\mathrm{Avg}_d\!\left(\left|\mathcal{F}^{-1}(\mathrm{ifftshift}(\widehat{\mathbf{X}}^{\ell}\odot\mathbf{M}))\right|\right)\in\mathbb{R}^{H\times W}\)</span>,展平成 <span class="arithmatex">\(\mathbb{R}^N\)</span>。为什么有效:<span class="arithmatex">\(\mathbf{S}_\ell\)</span> 隔离的是「低频抑制后的残差能量」(边缘、细结构),而非整个特征范数——消融(Fig. 5c)证明直接用 L1 残差范数(SFR)会因依赖像素级强度、对高频伪影敏感而性能崩溃,证明「先滤低频再看结构」这一步是必要的。</p>
+<p><strong>2. 跨层谱演化强度:用相邻层能量的相对变化衡量 token 是否「在被重塑」</strong></p>
+<p>有了单层能量还不够——关键 idea 是看它<strong>跨层怎么变</strong>。背景 token 的残差图近乎静止,语义参与的 token 则呈现明显重分布。对参考层 <span class="arithmatex">\(\ell\)</span> 与后续层 <span class="arithmatex">\(\ell{+}1\)</span>,定义 evolution intensity:</p>
+<div class="arithmatex">\[\mathcal{I}^{(\ell)}=\mathrm{clip}\!\left(\frac{|\mathbf{S}_{\ell+1}-\mathbf{S}_{\ell}|}{\mathbf{S}_{\ell}+\overline{\mathbf{S}}_{\ell}+\epsilon},\ 0,\ \tau_{\max}\right),\quad \overline{\mathbf{S}}_{\ell}=\mathrm{mean}(\mathbf{S}_{\ell})\]</div>
+<p>这是一个刻意设计成<strong>尺度不变</strong>的相对量:分母除以 <span class="arithmatex">\(\mathbf{S}_\ell\)</span> 防止大幅值 token 主导信号,加上全局均值 <span class="arithmatex">\(\overline{\mathbf{S}}_\ell\)</span> 作正则项,进一步压掉「局部能量低于全图均值」的非活跃/冗余区域的微小谱抖动;<span class="arithmatex">\(\epsilon\)</span> 和 <span class="arithmatex">\(\tau_{\max}\)</span> 保证数值稳定和抗离群。为什么有效:分子直接测「相邻层高频结构的重分布量」,而文本-视觉推理正是在早期解码层剧烈重塑 token 表示的地方——因此 <span class="arithmatex">\(\mathcal{I}^{(\ell)}\)</span> 大的 token 恰好是被主动更新的局部结构。消融(Fig. 5b)给出了「反事实」证据:CLSE-Inertia(反过来保留<strong>演化最弱</strong>、最静止的 token)出现灾难性崩溃,直接证明跨层谱演化确实是语义活跃度的主驱动因子。</p>
+<p><strong>3. 早层剪枝调度:在 decoder 第 1 层就剪,最大化 prefilling 加速</strong></p>
+<p>为最大化 prefill 阶段的加速,CLSE 把剪枝放到 LLM decoder 最前面。默认设置:用输入 embedding <span class="arithmatex">\(\mathbf{X}^0\)</span> 与第 1 层输出 <span class="arithmatex">\(\mathbf{X}^1\)</span>(即 <span class="arithmatex">\(0\!\to\!1\)</span>)计算 <span class="arithmatex">\(\mathcal{I}^{(\ell)}\)</span>,并在第 2 层之前执行 <span class="arithmatex">\(\mathcal{K}=\mathrm{TopK}(\mathcal{I}^{(\ell)},K)\)</span>,保留 <span class="arithmatex">\(\tilde{\mathbf{X}}^{\ell}=\mathbf{X}^{\ell}[\mathcal{K}]\)</span>,之后所有层只跑短序列。为什么选早层(附录 Table 8 给了扎实证据):早层视觉 token 仍保留原始空间多样性,语义活跃区(边缘、细结构)演化快、背景静止,CLSE 信号最有判别力,且此时剪掉能省下最多计算;中层(如第 10 层)反而最差——反复层间混合已抹平谱多样性、削弱信号,而计算又大多已发生;很深层(≥15)token 已互相同质化,精度虽回升但加速收益归零。因此推荐剪枝层 <span class="arithmatex">\(K\in\{1,3\}\)</span>。作者还给出理论(Thm. 1):在下游 Lipschitz + saliency 对齐假设下,剪枝引入的输出扰动上界为 <span class="arithmatex">\(\|g(\mathbf{X}^\ell)-g(P_\Omega(\mathbf{X}^\ell))\|_2\le\alpha\sum_{i\notin\Omega}\mathcal{I}^{(\ell)}_i\)</span>,即被丢弃的谱演化质量之和;按 <span class="arithmatex">\(\mathcal{I}^{(\ell)}\)</span> 取 Top-K 恰好最小化这个上界。⚠️ 该上界依赖一阶展开与 Assumption 2(token 下游影响被其谱演化分数上界),以原文为准。</p>
+<p><strong>4. CLSE-M:谱分数引导的 token merging,面向视频的信息召回</strong></p>
+<p>在视频(2048→194,&gt;90% 压缩)这种极端场景,纯硬剪不可避免会丢掉难以恢复的时序内容。CLSE-M 在硬剪基础上加两阶段召回:先取被剪 token 里 joint 分数最高的 top 30%(过滤掉几乎无注意力的),再用 density-peak clustering 把这 <span class="arithmatex">\(K\)</span> 个召回 token 压成 <span class="arithmatex">\(\lfloor K/10\rfloor+1\)</span> 个代表向量(聚类中心按「局部密度 × 到更高密度邻居的距离」联合选取,其余 token 归到最近中心并均值合并)。最终序列形如 <code>[前缀 | 保留视觉 r 个 | 合并代表 ⌊K/10⌋+1 个 | 文本]</code>。附录还提到 CLSE-M 用文本→视觉 attention 与 CLSE 因子相乘作 joint 分数、保留数由注意力矩阵的数值秩自适应决定(而非固定比例)。⚠️ 附录里 CLSE-M 的 joint 分数含 attention 项,与正文主实验「纯谱演化硬剪」略有差异,以原文附录 A.4 为准。</p>
+<h3 id="_6">损失函数 / 训练策略<a class="headerlink" href="#_6" title="Permanent link">&para;</a></h3>
+<p>CLSE 是完全 <strong>training-free</strong> 的:不改任何模型权重、不需要额外训练或微调,所有剪枝决策都在推理时基于中间层表示做出,可直接插入现有 MLLM 推理管线。唯一的超参是高通截止比 <span class="arithmatex">\(r{=}0.1\)</span>、剪枝层 <span class="arithmatex">\(K{\in}\{1,3\}\)</span>、以及 CLSE-Hybrid 变体里的温度 <span class="arithmatex">\(\tau{=}0.1\)</span>(附录 Table 7)。</p>
+<h2 id="_7">实验关键数据<a class="headerlink" href="#_7" title="Permanent link">&para;</a></h2>
+<h3 id="_8">主实验<a class="headerlink" href="#_8" title="Permanent link">&para;</a></h3>
+<p>LLaVA-1.5-7B(576 token 剪到 192/128/64),9 个图像 benchmark 的平均保持率(相对 Vanilla=100%):</p>
+<table>
+<thead>
+<tr>
+<th>方法</th>
+<th>Retain 192 (↓66.7%)</th>
+<th>Retain 128 (↓77.8%)</th>
+<th>Retain 64 (↓88.9%)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>ToMe (ICLR23)</td>
+<td>84.8%</td>
+<td>84.1%</td>
+<td>67.4%</td>
+</tr>
+<tr>
+<td>FastV (ECCV24)</td>
+<td>92.1%</td>
+<td>87.2%</td>
+<td>78.0%</td>
+</tr>
+<tr>
+<td>PruMerge (ICCV25)</td>
+<td>90.8%</td>
+<td>88.9%</td>
+<td>87.5%</td>
+</tr>
+<tr>
+<td>PDrop (CVPR25)</td>
+<td>96.9%</td>
+<td>95.3%</td>
+<td>77.0%</td>
+</tr>
+<tr>
+<td>HiRED (AAAI25)</td>
+<td>91.0%</td>
+<td>89.8%</td>
+<td>86.6%</td>
+</tr>
+<tr>
+<td>SparseVLM (ICML25)</td>
+<td>96.3%</td>
+<td>93.7%</td>
+<td>84.3%</td>
+</tr>
+<tr>
+<td>FiCoCo-V (AAAI26)</td>
+<td>96.2%</td>
+<td>94.3%</td>
+<td>89.8%</td>
+</tr>
+<tr>
+<td><strong>CLSE (Ours)</strong></td>
+<td><strong>99.4%</strong></td>
+<td><strong>98.1%</strong></td>
+<td><strong>94.8%</strong></td>
+</tr>
+</tbody>
+</table>
+<p>亮点:在最激进的 64 token(仅保留 11%)下,CLSE 达 94.8%,比次优 FiCoCo-V(89.8%)高 5 个点;且 CLSE 只用「谱演化打分 + 简单硬剪、无 token recycling」就打败了带 merging/recycling 的方法。跨模型也成立:Qwen2-VL-7B 三档分别 97.6%/95.8%/90.5%;LLaVA-Next-7B(2880→320,↓88.9%)达 94.7%;LLaVA-1.5-13B 三档 99.1%/98.2%/94.1%;InternVL-2.5-8B 在 ↓88.9% 达 96.2%(FastV 89.4%);Qwen2-VL-72B(4-bit)三档 96.4%/94.5%/90.0%,且领先 FastV 的差距随压缩加剧从 2.0→3.7→7.8 个点单调扩大。</p>
+<p>视频(Video-LLaVA-7B,2048→194,GPT-4o-mini 评测的平均 Acc):</p>
+<table>
+<thead>
+<tr>
+<th>方法</th>
+<th>类型</th>
+<th>Avg. Acc</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Vanilla</td>
+<td>—</td>
+<td>38.7</td>
+</tr>
+<tr>
+<td>FastV</td>
+<td>硬剪</td>
+<td>26.1</td>
+</tr>
+<tr>
+<td>PDrop</td>
+<td>硬剪</td>
+<td>27.3</td>
+</tr>
+<tr>
+<td>FiCoCo-V</td>
+<td>merge</td>
+<td>31.9</td>
+</tr>
+<tr>
+<td><strong>CLSE</strong></td>
+<td>硬剪</td>
+<td><strong>35.7</strong></td>
+</tr>
+<tr>
+<td>SparseVLM</td>
+<td>merge</td>
+<td>38.1</td>
+</tr>
+<tr>
+<td><strong>CLSE-M</strong></td>
+<td>merge</td>
+<td><strong>38.7</strong>(追平 Vanilla)</td>
+</tr>
+</tbody>
+</table>
+<p>效率(LLaVA-1.5-7B,192 token):CLSE 达 FLOPs 43.9%、KV cache 56 MB、精度 99.4%、prefill 加速 1.50×;FastV 更快(1.69×)但掉到 92.1%。视频端 CLSE-M 与 SparseVLM 同为 FLOPs 10.7%/KV 121.1 MB,但精度 100% vs 98.4%,加速 2.73×。</p>
+<h3 id="_9">消融实验<a class="headerlink" href="#_9" title="Permanent link">&para;</a></h3>
+<p>截止比 <span class="arithmatex">\(r\)</span> 与关键组件(LLaVA-1.5-7B,192 token,Fig. 5;层选择见附录 Table 8):</p>
+<table>
+<thead>
+<tr>
+<th>消融项</th>
+<th>设置</th>
+<th>结论 / 数据</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>高通截止比 <span class="arithmatex">\(r\)</span></td>
+<td><span class="arithmatex">\(r{=}0\)</span> → 小值</td>
+<td>从无滤波到 <span class="arithmatex">\(r{=}0.1\)</span> 性能大幅提升,轻度抑制低频即可去冗余;默认 <span class="arithmatex">\(r{=}0.1\)</span></td>
+</tr>
+<tr>
+<td>谱演化方向</td>
+<td>CLSE-Inertia(保留最静止 token)</td>
+<td><strong>灾难性崩溃</strong>,反证谱演化是语义活跃度主驱动</td>
+</tr>
+<tr>
+<td>打分度量</td>
+<td>SFR(L1 残差范数)</td>
+<td>性能崩溃(依赖像素级强度、对高频伪影敏感)</td>
+</tr>
+<tr>
+<td>打分度量</td>
+<td>MMD(通道均值差)</td>
+<td>稍稳定但仍粗糙,标量幅值抓不住频谱内的结构重分布</td>
+</tr>
+<tr>
+<td>剪枝层 <span class="arithmatex">\(K\)</span>(Table 8)</td>
+<td><span class="arithmatex">\(K{=}1\)</span>(默认)</td>
+<td>GQA 61.1 / MME 1814 / POPE 83.7,评测时间最低(1691s)</td>
+</tr>
+<tr>
+<td>剪枝层 <span class="arithmatex">\(K\)</span></td>
+<td><span class="arithmatex">\(K{=}10\)</span></td>
+<td>严重退化(POPE 42.7),信号已被层间混合抹平且计算已花掉</td>
+</tr>
+<tr>
+<td>剪枝层 <span class="arithmatex">\(K\)</span></td>
+<td><span class="arithmatex">\(K{\ge}15\)</span></td>
+<td>精度回升但几乎无加速收益</td>
+</tr>
+<tr>
+<td>参考层选择</td>
+<td><span class="arithmatex">\(L{=}K{-}1\)</span>(邻层) vs <span class="arithmatex">\(L{=}0\)</span>(全局)</td>
+<td>邻层参考普遍持平或更优,说明局部谱变化是可靠信号</td>
+</tr>
+<tr>
+<td>视频 FFT(Table 6)</td>
+<td>逐帧 2D vs 3D 时空</td>
+<td>逐帧 2D 全面且大幅胜出(35.7 vs 26.5),8 帧太短不足以做 3D 谱分析</td>
+</tr>
+</tbody>
+</table>
+<h3 id="_10">关键发现<a class="headerlink" href="#_10" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>谱演化(测跨层变化)是精度的第一贡献者</strong>:反着保留最静止 token 直接崩溃,说明重要性的本质是「动态」而非「幅值」,这是全篇的因果基石。</li>
+<li><strong>高通滤波不可省</strong>:去掉高通(用 SFR 原始残差范数)就崩;<span class="arithmatex">\(r\)</span> 从 0 调到 0.1 单调提升。低频=全局背景,先滤掉才能露出「结构」。</li>
+<li><strong>剪枝层是强 U 型 trade-off</strong>:早层(1、3)信号最锐利且省算力最多 → 最佳;中层(10)信号被抹平且算力已耗 → 最差;深层(≥15)精度回升但无加速。「在哪剪」和「怎么打分」同等重要。</li>
+<li><strong>压得越狠优势越大</strong>:在 64 token / ↓88.9% 这种极端压缩,CLSE 领先幅度最大(如 72B 上领先 FastV 从 2 个点扩到 7.8 个点),说明谱演化在预算最紧时最稳。</li>
+</ul>
+<h2 id="_11">亮点与洞察<a class="headerlink" href="#_11" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>把「重要性」从瞬时量重新定义为跨层动态量</strong>:这是最核心的观念转变。别人问「这个 token 现在有多强」,本文问「这个 token 正在被多剧烈地重塑」——后者才对应语义参与度。反事实消融(保留最静止 token 即崩溃)把这个 insight 钉死了。</li>
+<li><strong>频域高通 + 相对归一化的组合拳很巧</strong>:高通滤波把「结构」从「背景」里剥出来,相对归一化(除以本层能量+全局均值)让分数尺度不变、免受大幅值 token 与图间尺度差干扰,两步都直击 attention/幅值法的具体病灶,而不是空泛地「取平衡」。</li>
+<li><strong>免费的午餐——O(N log N) 打分</strong>:FFT 打分只需 ~108M FLOPs,不到单层 0.12%、全前向 0.004%。反观依赖 dense attention 权重的方法必须退回 O(N²) 的 Eager 实现(现代 SDPA/FlashAttention 内核根本不物化 N×N 矩阵),CLSE 因此不仅更准还更硬件友好,这是个容易被忽视但很实在的工程优势。</li>
+<li><strong>正交于 token merging,可即插组合</strong>:CLSE 是打分器,和 ToMe/density-peak 合并天然互补(CLSE-M),视频端追平满 token,复用性强。</li>
+<li><strong>最「啊哈」的点</strong>:同一张 attention 图,后半段视觉 token 被系统性打高分纯粹是位置编码副作用;而谱演化对这种位置偏置免疫,定性图(Fig. 6)里 CLSE 稳定聚焦到真正演化的物体/人体,attention 却散在背景上。</li>
+</ul>
+<h2 id="_12">局限与展望<a class="headerlink" href="#_12" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>作者承认的局限</strong>:视频端纯硬剪在 &gt;90% 压缩会丢失难恢复的时序内容,必须靠 CLSE-M 召回补偿;3D 时空 FFT 在稀疏采样(8 帧)下不如逐帧 2D,即方法的时序建模主要靠「跨层演化因子」间接承担,而非频域直接建模时序。</li>
+<li><strong>依赖空间可 reshape 的假设</strong>:<span class="arithmatex">\(N\!=\!H\cdot W\)</span> 才能 reshape 成 2D 网格做 FFT。对 InternVL 这类 dynamic tiling、或非规则 token 布局,需要额外设计(local/global 两种 FFT + 缩略图单独归一化),泛化性有代价。</li>
+<li><strong>理论保证偏弱(我的观察)</strong>:Thm. 1 的上界依赖一阶泰勒展开和 Assumption 2(token 下游影响被谱演化分数上界)这一较强的、无法验证的先验;作者自己也在 Remark 里承认这是「结构保持代理」而非任务目标的保证。它更像是对经验现象的事后合理化,而非独立预测力。</li>
+<li><strong>主实验 vs 附录不完全一致(我的观察)</strong>:正文主表宣称「纯谱演化硬剪」,但附录 A.4 的 CLSE/CLSE-M 完整管线把谱因子和文本→视觉 attention 相乘、并用注意力矩阵秩自适应定预算——读者容易混淆「哪个配置产出了主表数字」,建议以官方代码为准。</li>
+<li><strong>改进思路</strong>:超参 <span class="arithmatex">\(r\)</span>、<span class="arithmatex">\(K\)</span> 目前全局固定,能否按样本/层自适应?谱演化能否直接用于 KV cache 的层间动态释放,而不只是 prefill 前一次性剪枝?</li>
+</ul>
+<h2 id="_13">相关工作与启发<a class="headerlink" href="#_13" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>vs FastV(ECCV24)</strong>:FastV 在第 3 层用 LLM 的 attention 幅值排序剪 token,是「单层 attention」代表。本文指出 attention 有位置偏置且依赖 dense 权重(退化到 O(N²)),改用第 1 层的跨层谱演化打分,既避开位置偏置又保持 O(N log N),同预算下精度全面反超(64 token 上 94.8% vs 78.0%)。</li>
+<li><strong>vs SparseVLM(ICML25)</strong>:SparseVLM 用文本-视觉 attention 打分 + 自适应稀疏 + token recycling。CLSE-M 用同样的 recycling 骨架但把打分换成谱演化(视频端 38.7 vs 38.1),证明「信号来源」比「回收机制」更决定上限。</li>
+<li><strong>vs ToMe / PruMerge(ICLR23 / ICCV25)</strong>:它们靠特征相似度合并 token。本文正交——CLSE 是重要性打分器,可与合并组合;且论证「相似度/多样性」抓不到「任务相关的跨层动态」。</li>
+<li><strong>vs Fourier-VLM / VTC-LFC(频域压缩类)</strong>:这些在<strong>单层内</strong>用低通滤波压缩 token。本文关键区别是把频域变换用作<strong>跨层重要性判据</strong>(高通 + 层间差分),关心的是 token「是否发生了细节→语义的转变」,而非在某层压缩它。</li>
+<li><strong>vs V²Drop(CVPR26,并行工作)</strong>:V²Drop 也看跨层动态,渐进丢弃「表示变化极小的 lazy token」。思路撞车,但 V²Drop 在原始特征空间测变化,CLSE 在<strong>频域高通后</strong>测变化,后者能剥离低频背景、聚焦结构重分布,消融显示原始残差范数(SFR)会崩溃,暗示频域这一步是关键差异。</li>
+</ul>
+<h2 id="_14">评分<a class="headerlink" href="#_14" title="Permanent link">&para;</a></h2>
+<ul>
+<li>新颖性: ⭐⭐⭐⭐⭐ 「重要性=跨层谱演化」是一个干净且被反事实消融强力支撑的新判据,频域高通+层间差分的组合此前未见于 MLLM token 剪枝。</li>
+<li>实验充分度: ⭐⭐⭐⭐⭐ 覆盖 5+ 图像/视频 MLLM(含 72B、InternVL、量化)、3 档压缩率、9+ benchmark,消融把每个组件、剪枝层、2D/3D FFT 都拆开验证,罕见地完整。</li>
+<li>写作质量: ⭐⭐⭐⭐ 动机链条清晰、图示到位;但主表配置与附录完整管线的口径差异会让复现者困惑,理论一节略显硬凑。</li>
+<li>价值: ⭐⭐⭐⭐⭐ Training-free、plug-and-play、打分开销可忽略、正交于 merging,几乎零成本可接入现有 MLLM,实用价值高。</li>
+</ul>
+<!-- RELATED:START -->
+
+<div class="related-papers">
+<h2 id="_15">相关论文<a class="headerlink" href="#_15" title="Permanent link">&para;</a></h2>
+<ul>
+<li><a href="../accelerating_multimodal_large_language_models_with_prior-corrected_token_reducti/">[ECCV 2026] Accelerating Multimodal Large Language Models with Prior-Corrected Token Reduction</a></li>
+<li><a href="../../../CVPR2026/vlm_efficiency/if-prune_information-flow_guided_token_pruning_for_efficient_vision-language_mod/">[CVPR 2026] IF-Prune: Information-Flow Guided Token Pruning for Efficient Vision-Language Models</a></li>
+<li><a href="../../../CVPR2026/vlm_efficiency/coin_coverage_and_informativeness-guided_token_reduction_for_efficient_large_mul/">[CVPR 2026] CoIn: Coverage and Informativeness-Guided Token Reduction for Efficient Large Multimodal Models</a></li>
+<li><a href="../../../CVPR2026/vlm_efficiency/evocomp_learning_visual_token_compression_for_multimodal_large_language_models_v/">[CVPR 2026] EvoComp: Learning Visual Token Compression for Multimodal Large Language Models via Semantic-Guided Evolutionary Labeling</a></li>
+<li><a href="../../../CVPR2026/vlm_efficiency/omnizip_audio-guided_dynamic_token_compression_for_fast_omnimodal_large_language/">[CVPR 2026] OmniZip: Audio-Guided Dynamic Token Compression for Fast Omnimodal Large Language Models</a></li>
+</ul>
+</div>
+<!-- RELATED:END -->
+
+
+
+
+
+
+
+  
+  
+
+
+
+
+
+
+                
+
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  回到页面顶部
+</button>
+        
+      </main>
+      
+        
+<footer class="md-footer" data-nosnippet>
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      
+<div class="md-copyright personal-attribution">
+  
+  <div class="personal-attribution__original">✨本站笔记由 AI 辅助生成，仅供学术参考，如有错误欢迎指正</div>
+  
+  <div class="personal-attribution__row">
+    <span class="personal-attribution__label">内容来源</span>
+    <span>基于 <a href="https://github.com/zhaoyang97/Paper-Notes">Paper-Notes · zhaoyang97</a></span>
+    <span class="personal-attribution__divider" aria-hidden="true">·</span>
+    <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a>
+    <span class="personal-attribution__divider" aria-hidden="true">·</span>
+    <a href="../../../MyNotes/about/">版权与来源说明</a>
+  </div>
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+      <div class="md-progress" data-md-component="progress" role="progressbar"></div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../../..", "features": ["navigation.instant", "navigation.instant.progress", "navigation.tabs", "navigation.sections", "navigation.indexes", "navigation.top", "navigation.prune", "content.code.copy", "toc.follow"], "search": "../../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "\u5df2\u590d\u5236", "clipboard.copy": "\u590d\u5236", "search.result.more.one": "\u5728\u8be5\u9875\u4e0a\u8fd8\u6709 1 \u4e2a\u7b26\u5408\u6761\u4ef6\u7684\u7ed3\u679c", "search.result.more.other": "\u5728\u8be5\u9875\u4e0a\u8fd8\u6709 # \u4e2a\u7b26\u5408\u6761\u4ef6\u7684\u7ed3\u679c", "search.result.none": "\u6ca1\u6709\u627e\u5230\u7b26\u5408\u6761\u4ef6\u7684\u7ed3\u679c", "search.result.one": "\u627e\u5230 1 \u4e2a\u7b26\u5408\u6761\u4ef6\u7684\u7ed3\u679c", "search.result.other": "# \u4e2a\u7b26\u5408\u6761\u4ef6\u7684\u7ed3\u679c", "search.result.placeholder": "\u952e\u5165\u4ee5\u5f00\u59cb\u641c\u7d22", "search.result.term.missing": "\u7f3a\u5c11", "select.version": "\u9009\u62e9\u5f53\u524d\u7248\u672c"}, "version": null}</script>
+    
+    
+
+      <script src="../../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+        <script src="../../../javascripts/title-link.js"></script>
+      
+        <script src="../../../javascripts/mathjax.js"></script>
+      
+        <script src="https://unpkg.com/mathjax@3.2.2/es5/tex-mml-chtml.js"></script>
+      
+        <script src="../../../javascripts/search-page.js"></script>
+      
+    
+
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/3.2.2/es5/tex-mml-chtml.min.js"></script>
+
+
+  </body>
+</html>

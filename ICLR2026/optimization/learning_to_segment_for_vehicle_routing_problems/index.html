@@ -1,0 +1,2469 @@
+
+<!doctype html>
+<html lang="zh" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="[ICLR 2026][优化/理论][车辆路径问题] 作者发现迭代式 VRP 求解器在搜索过程中大量边其实早已"稳定不变"、反复优化它们纯属浪费算力，于是提出 First-Segment-Then-Aggregate（FSTA）分解框架把稳定段聚合成超节点、只让求解器去啃不稳定部分，再用神经网络 L2Seg（含自回归、非自回归及二者协同三种变体）学会判断哪些段该聚合，从而把 LKH-3/LNS/L2D 等 SOTA 求解器加速 2~7 倍。">
+      
+      
+      
+        <link rel="canonical" href="https://flyme45.github.io/Paper-Notes/ICLR2026/optimization/learning_to_segment_for_vehicle_routing_problems/">
+      
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../../assets/favicon.svg">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+
+  <title>[论文解读] Learning to Segment for Vehicle Routing Problems</title>
+
+    
+      <link rel="stylesheet" href="../../../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+    
+    
+      <link rel="stylesheet" href="../../../stylesheets/personal-attribution.css">
+    
+      <link rel="stylesheet" href="../../../stylesheets/extra.css">
+    
+    <script>__md_scope=new URL("../../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+
+<meta name="msvalidate.01" content="114D58B390D11BE882DB17E9BF9BF2F2" />
+
+
+
+
+<script data-site-url="https://flyme45.github.io/Paper-Notes/"
+        data-analytics-token="addbd9c7107a490092d47711a630688f">
+(function() {
+  var analyticsConfig = document.currentScript.dataset;
+  var canonicalHost = new URL(analyticsConfig.siteUrl).hostname;
+  if (window.location.hostname !== canonicalHost) return;
+
+  var beacon = document.createElement('script');
+  beacon.src = 'https://static.cloudflareinsights.com/beacon.min.js';
+  beacon.dataset.cfBeacon = JSON.stringify({
+    token: analyticsConfig.analyticsToken
+  });
+  document.head.appendChild(beacon);
+})();
+</script>
+
+
+
+<meta name="robots" content="index,follow,max-snippet:180,max-image-preview:large" />
+<meta name="googlebot" content="index,follow,max-snippet:180,max-image-preview:large" />
+
+
+<script>
+(function() {
+  function markChromeNoSnippet() {
+    var selectors = [
+      '.md-header', '.md-tabs', '.md-sidebar', '.md-search',
+      '.md-footer', '.md-source', '.md-top'
+    ];
+    selectors.forEach(function(selector) {
+      document.querySelectorAll(selector).forEach(function(node) {
+        node.setAttribute('data-nosnippet', '');
+      });
+    });
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', markChromeNoSnippet);
+  } else {
+    markChromeNoSnippet();
+  }
+})();
+</script>
+
+
+
+
+<link rel="alternate" hreflang="zh-CN" href="https://papernotes.org/ICLR2026/optimization/learning_to_segment_for_vehicle_routing_problems/" />
+<link rel="alternate" hreflang="en" href="https://en.papernotes.org/ICLR2026/optimization/learning_to_segment_for_vehicle_routing_problems/" />
+<link rel="alternate" hreflang="x-default" href="https://papernotes.org/ICLR2026/optimization/learning_to_segment_for_vehicle_routing_problems/" />
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<meta name="keywords" content="ICLR 2026, 优化/理论, 车辆路径问题, 神经组合优化, 迭代搜索加速, 问题分解, 自回归/非自回归模型" />
+
+
+<meta property="article:tag" content="ICLR 2026" />
+
+<meta property="article:tag" content="优化/理论" />
+
+<meta property="article:tag" content="车辆路径问题" />
+
+<meta property="article:tag" content="神经组合优化" />
+
+<meta property="article:tag" content="迭代搜索加速" />
+
+<meta property="article:tag" content="问题分解" />
+
+<meta property="article:tag" content="自回归/非自回归模型" />
+
+
+
+
+<!-- OpenGraph & Twitter Card -->
+<meta property="og:site_name" content="📚 AI Paper Notes" />
+<meta property="og:type" content="article" />
+<meta property="og:url" content="https://flyme45.github.io/Paper-Notes/ICLR2026/optimization/learning_to_segment_for_vehicle_routing_problems/" />
+<meta property="og:title" content="[论文解读] Learning to Segment for Vehicle Routing Problems" />
+<meta property="og:description" content="[ICLR 2026][优化/理论][车辆路径问题] 作者发现迭代式 VRP 求解器在搜索过程中大量边其实早已&#34;稳定不变&#34;、反复优化它们纯属浪费算力，于是提出 First-Segment-Then-Aggregate（FSTA）分解框架把稳定段聚合成超节点、只让求解器去啃不稳定部分，再用神经网络 L2Seg（含自回归、非自回归及二者协同三种变体）学会判断哪些段该聚合，从而把 LKH-3/LNS/L2D 等 SOTA 求解器加速 2~7 倍。" />
+<meta name="twitter:card" content="summary" />
+<meta name="twitter:title" content="[论文解读] Learning to Segment for Vehicle Routing Problems" />
+<meta name="twitter:description" content="[ICLR 2026][优化/理论][车辆路径问题] 作者发现迭代式 VRP 求解器在搜索过程中大量边其实早已&#34;稳定不变&#34;、反复优化它们纯属浪费算力，于是提出 First-Segment-Then-Aggregate（FSTA）分解框架把稳定段聚合成超节点、只让求解器去啃不稳定部分，再用神经网络 L2Seg（含自回归、非自回归及二者协同三种变体）学会判断哪些段该聚合，从而把 LKH-3/LNS/L2D 等 SOTA 求解器加速 2~7 倍。" />
+
+
+<!-- JSON-LD: Organization (site-wide entity; referenced by @id elsewhere) -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "Organization",
+  "@id": "https://papernotes.org/#organization",
+  "name": "AI Paper Notes",
+  "alternateName": "论文笔记",
+  "url": "https://papernotes.org/",
+  "sameAs": [
+    "https://github.com/zhaoyang97/Paper-Notes",
+    "https://en.papernotes.org/"
+  ]
+}
+</script>
+
+<!-- JSON-LD: ScholarlyArticle (paper page) -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "ScholarlyArticle",
+  "name": "[\u8bba\u6587\u89e3\u8bfb] Learning to Segment for Vehicle Routing Problems",
+  "headline": "[\u8bba\u6587\u89e3\u8bfb] Learning to Segment for Vehicle Routing Problems",
+  "description": "[ICLR 2026][\u4f18\u5316/\u7406\u8bba][\u8f66\u8f86\u8def\u5f84\u95ee\u9898] \u4f5c\u8005\u53d1\u73b0\u8fed\u4ee3\u5f0f VRP \u6c42\u89e3\u5668\u5728\u641c\u7d22\u8fc7\u7a0b\u4e2d\u5927\u91cf\u8fb9\u5176\u5b9e\u65e9\u5df2\"\u7a33\u5b9a\u4e0d\u53d8\"\u3001\u53cd\u590d\u4f18\u5316\u5b83\u4eec\u7eaf\u5c5e\u6d6a\u8d39\u7b97\u529b\uff0c\u4e8e\u662f\u63d0\u51fa First-Segment-Then-Aggregate\uff08FSTA\uff09\u5206\u89e3\u6846\u67b6\u628a\u7a33\u5b9a\u6bb5\u805a\u5408\u6210\u8d85\u8282\u70b9\u3001\u53ea\u8ba9\u6c42\u89e3\u5668\u53bb\u5543\u4e0d\u7a33\u5b9a\u90e8\u5206\uff0c\u518d\u7528\u795e\u7ecf\u7f51\u7edc L2Seg\uff08\u542b\u81ea\u56de\u5f52\u3001\u975e\u81ea\u56de\u5f52\u53ca\u4e8c\u8005\u534f\u540c\u4e09\u79cd\u53d8\u4f53\uff09\u5b66\u4f1a\u5224\u65ad\u54ea\u4e9b\u6bb5\u8be5\u805a\u5408\uff0c\u4ece\u800c\u628a LKH-3/LNS/L2D \u7b49 SOTA \u6c42\u89e3\u5668\u52a0\u901f 2~7 \u500d\u3002",
+  "url": "https://flyme45.github.io/Paper-Notes/ICLR2026/optimization/learning_to_segment_for_vehicle_routing_problems/",
+  "mainEntityOfPage": "https://flyme45.github.io/Paper-Notes/ICLR2026/optimization/learning_to_segment_for_vehicle_routing_problems/",
+  "inLanguage": "zh-CN",
+  "isAccessibleForFree": true,
+  "learningResourceType": "AI paper note",
+  "genre": "论文解读",
+  
+  "keywords": "ICLR 2026, \u4f18\u5316/\u7406\u8bba, \u8f66\u8f86\u8def\u5f84\u95ee\u9898, \u795e\u7ecf\u7ec4\u5408\u4f18\u5316, \u8fed\u4ee3\u641c\u7d22\u52a0\u901f, \u95ee\u9898\u5206\u89e3, \u81ea\u56de\u5f52/\u975e\u81ea\u56de\u5f52\u6a21\u578b",
+  "about": [
+    { "@type": "Thing", "name": "ICLR 2026" },
+    { "@type": "Thing", "name": "\u4f18\u5316/\u7406\u8bba" },
+    { "@type": "Thing", "name": "\u8f66\u8f86\u8def\u5f84\u95ee\u9898" },
+    { "@type": "Thing", "name": "\u795e\u7ecf\u7ec4\u5408\u4f18\u5316" },
+    { "@type": "Thing", "name": "\u8fed\u4ee3\u641c\u7d22\u52a0\u901f" },
+    { "@type": "Thing", "name": "\u95ee\u9898\u5206\u89e3" },
+    { "@type": "Thing", "name": "\u81ea\u56de\u5f52/\u975e\u81ea\u56de\u5f52\u6a21\u578b" }
+  ],
+  
+  "datePublished": "2026-10-03",
+  "dateModified": "2026-10-03",
+  "author": { "@id": "https://papernotes.org/#organization" },
+  "publisher": { "@id": "https://papernotes.org/#organization" }
+}
+</script>
+
+
+<!-- JSON-LD: BreadcrumbList -->
+
+
+
+
+
+
+
+
+
+
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  "itemListElement": [
+    {
+      "@type": "ListItem",
+      "position": 1,
+      "name": "AI Paper Notes",
+      "item": "https://flyme45.github.io/Paper-Notes/"
+    },
+    {
+      "@type": "ListItem",
+      "position": 2,
+      "name": "[\u8bba\u6587\u89e3\u8bfb] Learning to Segment for Vehicle Routing Problems",
+      "item": "https://flyme45.github.io/Paper-Notes/ICLR2026/optimization/learning_to_segment_for_vehicle_routing_problems/"
+    }
+  ]
+}
+</script>
+
+
+
+<!-- Lazy-load search worker: defer search_index.json download until user opens search -->
+<!-- Index is title-only (~7MB, slimmed by hooks/slim_search_index.py post-build) -->
+<!-- Mobile: redirect to Bing site search (no search index download at all) -->
+<!-- Desktop: create search worker lazily only when user focuses on search input -->
+<script>
+(function() {
+  var isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+
+  // ── Bilingual query expansion mapping (中↔英) ──
+  var P = [
+    "上下文学习|in-context learning","持续学习|continual learning","课程学习|curriculum learning",
+    "小样本学习|few-shot learning","零样本|zero-shot","元学习|meta-learning",
+    "模仿学习|imitation learning","主动学习|active learning","自监督学习|self-supervised learning",
+    "多任务学习|multi-task learning","迁移学习|transfer learning","强化学习|reinforcement learning",
+    "对比学习|contrastive learning","知识蒸馏|knowledge distillation","联邦学习|federated learning",
+    "微调|fine-tuning","预训练|pre-training","指令微调|instruction tuning",
+    "合成数据|synthetic data","数据增强|data augmentation",
+    "推理|reasoning","空间推理|spatial reasoning","视觉推理|visual reasoning",
+    "幻觉|hallucination","越狱攻击|jailbreak","对齐|alignment","奖励模型|reward model",
+    "偏好优化|preference optimization","推测解码|speculative decoding","长上下文|long context",
+    "知识编辑|knowledge editing","知识图谱|knowledge graph","代码生成|code generation",
+    "多智能体|multi-agent","具身智能|embodied ai","视觉定位|visual grounding",
+    "文生图|text-to-image","视频生成|video generation","新视角合成|novel view synthesis",
+    "运动生成|motion generation","鲁棒性|robustness","对抗攻击|adversarial attack",
+    "差分隐私|differential privacy","可解释性|interpretability","泛化|generalization",
+    "不确定性|uncertainty","异常检测|anomaly detection","因果推理|causal inference",
+    "基础模型|foundation model","世界模型|world model","扩散模型|diffusion model",
+    "目标检测|object detection","语义分割|semantic segmentation","实例分割|instance segmentation",
+    "图像分割|image segmentation","点云|point cloud","深度估计|depth estimation",
+    "光流|optical flow","姿态估计|pose estimation","图像复原|image restoration",
+    "图像生成|image generation","图像编辑|image editing","超分辨率|super-resolution",
+    "视频理解|video understanding","动作识别|action recognition","视觉问答|visual question answering",
+    "文生视频|text-to-video","语音识别|speech recognition","自动驾驶|autonomous driving",
+    "遥感|remote sensing","医学影像|medical imaging","模型压缩|model compression",
+    "量化|quantization","多模态|multi-modal","跨模态|cross-modal",
+    "图神经网络|graph neural network","注意力机制|attention mechanism",
+    "域适应|domain adaptation","领域泛化|domain generalization","分布外|out-of-distribution",
+    "开放词汇|open-vocabulary","人脸识别|face recognition","机器翻译|machine translation",
+    "情感分析|sentiment analysis","文档理解|document understanding","问答|question answering",
+    "轨迹预测|trajectory prediction","图像修复|image inpainting","去噪|denoising",
+    "模型剪枝|model pruning","参数高效微调|parameter-efficient fine-tuning",
+    "灾难性遗忘|catastrophic forgetting","3D目标检测|3d object detection",
+  ];
+  var M = {};
+  P.forEach(function(p) { var s = p.split('|'); M[s[0]] = s[1]; M[s[1]] = s[0]; });
+
+  function expand(q) {
+    var ql = q.toLowerCase().trim();
+    if (M[ql]) return q + ' ' + M[ql];
+    var extra = [], seen = {};
+    for (var t in M) {
+      if (ql.indexOf(t) !== -1 && !seen[M[t]]) { seen[M[t]] = true; extra.push(M[t]); }
+    }
+    return extra.length ? q + ' ' + extra.join(' ') : q;
+  }
+  window.__pnExpand = expand;
+
+  // ── Press Enter in the header search box → open the full /search/ results page ──
+  document.addEventListener('keydown', function(e) {
+    if (e.key !== 'Enter') return;
+    var t = e.target;
+    if (!t || !t.classList || !t.classList.contains('md-search__input')) return;
+    e.preventDefault(); e.stopPropagation();
+    var i = location.pathname.indexOf('/search/');
+    var b = i >= 0 ? location.pathname.slice(0, i + 1) : '/';
+    var v = t.value.trim();
+    location.href = b + 'search/' + (v ? '?q=' + encodeURIComponent(v) : '');
+  }, true);
+
+  // ── Mobile: disable search worker entirely, use Bing ──
+  if (isMobile) {
+    if (window.Worker) {
+      var origWorkerMobile = window.Worker;
+      window.Worker = function(url) {
+        if (typeof url === 'string' && url.indexOf('search') !== -1) {
+          return { postMessage: function(){}, terminate: function(){}, onmessage: null };
+        }
+        return new origWorkerMobile(url);
+      };
+    }
+    document.addEventListener('click', function(e) {
+      var el = e.target.closest('label[for="__search"], .md-search__icon, .md-header__button[data-md-component="search"]');
+      if (!el) return;
+      e.preventDefault(); e.stopPropagation();
+      var q = prompt('搜索论文笔记');
+      if (q && q.trim()) {
+        window.open('https://www.bing.com/search?q=site:papernotes.org+' + encodeURIComponent(q.trim()), '_blank');
+      }
+    }, true);
+    return;
+  }
+
+  // ── Desktop: lazy-load search worker (only download index when user opens search) ──
+  if (window.Worker) {
+    var OrigWorker = window.Worker;
+    window.Worker = function(url, opts) {
+      // Non-search workers: create immediately
+      if (typeof url !== 'string' || url.indexOf('search') === -1) {
+        return new OrigWorker(url, opts);
+      }
+
+      // Search worker: create a lazy proxy
+      var realWorker = null;
+      var queued = [];
+      var proxy = {
+        onmessage: null,
+        onerror: null,
+        terminate: function() { if (realWorker) realWorker.terminate(); },
+        postMessage: function(msg) {
+          // Sanitize + bilingual-expand the query before it reaches lunr.
+          if (msg && typeof msg.data === 'string' && msg.data.length > 0 && msg.data.length < 200) {
+            // Strip lunr query-syntax metacharacters. A literal ':' (field
+            // separator), '~' (fuzzy), '^' (boost) or '*' (wildcard) in the raw
+            // text makes lunr throw QueryParseError -> 0 results. This is why
+            // pasting a paper's full title like "Cog-RAG: Cognitive-Inspired ..."
+            // returned "no results": the ':' broke the query parser.
+            var cleaned = msg.data.replace(/[:~^*]/g, ' ').replace(/\s+/g, ' ').trim();
+            msg = Object.assign({}, msg, { data: expand(cleaned) });
+          }
+          if (realWorker) {
+            realWorker.postMessage(msg);
+          } else {
+            queued.push(msg);
+          }
+        },
+        addEventListener: function(type, fn) {
+          if (type === 'message') proxy.onmessage = fn;
+          else if (type === 'error') proxy.onerror = fn;
+        },
+        removeEventListener: function() {}
+      };
+
+      // Materialize the real worker (called once when user opens search)
+      function materialize() {
+        if (realWorker) return;
+        realWorker = new OrigWorker(url, opts);
+        realWorker.onmessage = function(e) {
+          if (typeof proxy.onmessage === 'function') proxy.onmessage(e);
+        };
+        realWorker.onerror = function(e) {
+          if (typeof proxy.onerror === 'function') proxy.onerror(e);
+        };
+        // Flush queued messages
+        for (var i = 0; i < queued.length; i++) realWorker.postMessage(queued[i]);
+        queued = [];
+      }
+
+      // Trigger worker creation when user opens search
+      function onSearchOpen() {
+        materialize();
+        // Clean up listeners after first trigger
+        document.removeEventListener('focusin', onFocusIn, true);
+        var cb = document.getElementById('__search');
+        if (cb) cb.removeEventListener('change', onSearchOpen);
+      }
+
+      function onFocusIn(e) {
+        if (e.target && e.target.classList && e.target.classList.contains('md-search__input')) {
+          onSearchOpen();
+        }
+      }
+
+      // Listen for search input focus or search checkbox toggle
+      document.addEventListener('focusin', onFocusIn, true);
+      var searchCheckbox = document.getElementById('__search');
+      if (searchCheckbox) {
+        searchCheckbox.addEventListener('change', onSearchOpen);
+      }
+
+      return proxy;
+    };
+    window.Worker.prototype = OrigWorker.prototype;
+  }
+})();
+</script>
+
+<!-- Add deep-search fallback link in search results (both mobile and desktop) -->
+<script>
+(function() {
+  // Inject a "全文深度搜索 via Bing" link at the bottom of search results.
+  //
+  // IMPORTANT: we must NOT use a MutationObserver on `.md-search` with
+  // subtree:true and then appendChild into `.md-search-result`, because the
+  // append mutates the observed subtree → triggers the observer again → infinite
+  // loop → tab OOM ("喔唷，崩溃啦 / Out of Memory"). Instead we listen to the
+  // search input's `input` event (which does NOT fire from our own DOM
+  // mutations) and debounce updates to the fallback link.
+  var lastQuery = null;
+  var scheduled = false;
+
+  function updateLink() {
+    scheduled = false;
+    var input = document.querySelector('.md-search__input');
+    var output = document.querySelector('.md-search-result');
+    if (!input || !output) return;
+
+    var query = input.value.trim();
+
+    // Only touch the DOM if query actually changed — avoids churn while user
+    // is typing and prevents redundant re-renders.
+    if (query === lastQuery) return;
+    lastQuery = query;
+
+    var existing = output.querySelector('.deep-search-link');
+    if (!query) {
+      if (existing) existing.remove();
+      return;
+    }
+
+    var encoded = encodeURIComponent(query);
+    var site = 'site:papernotes.org+';
+    var html =
+      '<a href="https://www.bing.com/search?q=' + site + encoded +
+      '" target="_blank" rel="noopener" style="color:var(--md-accent-fg-color);font-size:0.85rem;">' +
+      '🔍 全文深度搜索「' + query.replace(/</g, '&lt;').replace(/>/g, '&gt;') + '」(via Bing)</a>' +
+      '<span style="display:block;font-size:0.75rem;color:var(--md-default-fg-color--light);margin-top:2px;">' +
+      '站内搜索仅匹配标题、标签和关键词，点此搜索全文内容</span>';
+
+    if (existing) {
+      existing.innerHTML = html;
+    } else {
+      var link = document.createElement('div');
+      link.className = 'deep-search-link';
+      link.style.cssText = 'padding:12px 16px;text-align:center;border-top:1px solid var(--md-default-fg-color--lightest);';
+      link.innerHTML = html;
+      output.appendChild(link);
+    }
+  }
+
+  function schedule() {
+    if (scheduled) return;
+    scheduled = true;
+    // Defer to rAF so we merge rapid events and run after Material renders
+    // its own results.
+    (window.requestAnimationFrame || function(fn){setTimeout(fn,16);})(updateLink);
+  }
+
+  document.addEventListener('DOMContentLoaded', function() {
+    var input = document.querySelector('.md-search__input');
+    if (!input) return;
+    input.addEventListener('input', schedule);
+    input.addEventListener('focus', schedule);
+  });
+})();
+</script>
+
+<!-- Promote near-exact title matches to the top of search results -->
+<script>
+(function() {
+  // Why: lunr (BM25) length-normalization penalizes long titles, so pasting a
+  // paper's FULL title can rank that paper BELOW shorter titles that merely
+  // share one common token (e.g. "hypergraph"). We re-rank the *rendered*
+  // results client-side: when one result's title covers almost all of the
+  // query's words, we move it to the top. We never use a MutationObserver
+  // (it would loop → OOM); we re-apply on the input event with a few short
+  // delayed passes so it survives Material's async re-render.
+  var SEP = /[\s\u200b\-\.\,\!\?\;\:\(\)\[\]\{\}\/\|]+/;
+  function toks(s) {
+    return (s || '').toLowerCase().split(SEP).filter(function(t){ return t.length >= 2; });
+  }
+  function promote() {
+    var input = document.querySelector('.md-search__input');
+    var list = document.querySelector('.md-search-result__list');
+    if (!input || !list) return;
+    var q = input.value.trim();
+    if (q.length < 8) return;                 // only long, title-like queries
+    var qToks = toks(q);
+    if (qToks.length < 3) return;             // leave short keyword searches alone
+    var qSet = {}; qToks.forEach(function(t){ qSet[t] = true; });
+    var items = [].slice.call(list.children).filter(function(el){
+      return el.classList && el.classList.contains('md-search-result__item');
+    });
+    if (items.length < 2) return;
+    var best = null, bestScore = 0;
+    items.forEach(function(it) {
+      var h = it.querySelector('h1, .md-search-result__title');
+      var tToks = toks(h ? h.textContent : '');
+      if (!tToks.length) return;
+      var tSet = {}; tToks.forEach(function(t){ tSet[t] = true; });
+      var hit = 0; qToks.forEach(function(t){ if (tSet[t]) hit++; });
+      var coverage = hit / qToks.length;      // share of query words found in title
+      if (coverage > bestScore) { bestScore = coverage; best = it; }
+    });
+    // Only reorder when the best title clearly IS what the user typed.
+    if (best && bestScore >= 0.8 && best !== list.firstElementChild) {
+      list.insertBefore(best, list.firstElementChild);
+    }
+  }
+  function schedule() {
+    [180, 420, 800].forEach(function(d){ setTimeout(promote, d); });
+  }
+  document.addEventListener('DOMContentLoaded', function() {
+    var input = document.querySelector('.md-search__input');
+    if (input) input.addEventListener('input', schedule);
+  });
+})();
+</script>
+
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="deep-purple">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#learning-to-segment-for-vehicle-routing-problems" class="md-skip">
+          跳转至
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+
+<header class="md-header" data-md-component="header" data-nosnippet>
+  <nav class="md-header__inner md-grid" aria-label="页眉">
+    <a href="../../.." title="📚 AI Paper Notes" class="md-header__button md-logo" aria-label="📚 AI Paper Notes" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 21.5c-1.35-.85-3.8-1.5-5.5-1.5-1.65 0-3.35.3-4.75 1.05-.1.05-.15.05-.25.05-.25 0-.5-.25-.5-.5V6c.6-.45 1.25-.75 2-1 1.11-.35 2.33-.5 3.5-.5 1.95 0 4.05.4 5.5 1.5 1.45-1.1 3.55-1.5 5.5-1.5 1.17 0 2.39.15 3.5.5.75.25 1.4.55 2 1v14.6c0 .25-.25.5-.5.5-.1 0-.15 0-.25-.05-1.4-.75-3.1-1.05-4.75-1.05-1.7 0-4.15.65-5.5 1.5M12 8v11.5c1.35-.85 3.8-1.5 5.5-1.5 1.2 0 2.4.15 3.5.5V7c-1.1-.35-2.3-.5-3.5-.5-1.7 0-4.15.65-5.5 1.5m1 3.5c1.11-.68 2.6-1 4.5-1 .91 0 1.76.09 2.5.28V9.23c-.87-.15-1.71-.23-2.5-.23q-2.655 0-4.5.84zm4.5.17c-1.71 0-3.21.26-4.5.79v1.69c1.11-.65 2.6-.99 4.5-.99 1.04 0 1.88.08 2.5.24v-1.5c-.87-.16-1.71-.23-2.5-.23m2.5 2.9c-.87-.16-1.71-.24-2.5-.24-1.83 0-3.33.27-4.5.8v1.69c1.11-.66 2.6-.99 4.5-.99 1.04 0 1.88.08 2.5.24z"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            📚 AI Paper Notes
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              [论文解读] Learning to Segment for Vehicle Routing Problems
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="deep-purple"  aria-label="切换暗色模式"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="切换暗色模式" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 7a5 5 0 0 1 5 5 5 5 0 0 1-5 5 5 5 0 0 1-5-5 5 5 0 0 1 5-5m0 2a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3m0-7 2.39 3.42C13.65 5.15 12.84 5 12 5s-1.65.15-2.39.42zM3.34 7l4.16-.35A7.2 7.2 0 0 0 5.94 8.5c-.44.74-.69 1.5-.83 2.29zm.02 10 1.76-3.77a7.131 7.131 0 0 0 2.38 4.14zM20.65 7l-1.77 3.79a7.02 7.02 0 0 0-2.38-4.15zm-.01 10-4.14.36c.59-.51 1.12-1.14 1.54-1.86.42-.73.69-1.5.83-2.29zM12 22l-2.41-3.44c.74.27 1.55.44 2.41.44.82 0 1.63-.17 2.37-.44z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="deep-purple"  aria-label="切换亮色模式"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="切换亮色模式" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m17.75 4.09-2.53 1.94.91 3.06-2.63-1.81-2.63 1.81.91-3.06-2.53-1.94L12.44 4l1.06-3 1.06 3zm3.5 6.91-1.64 1.25.59 1.98-1.7-1.17-1.7 1.17.59-1.98L15.75 11l2.06-.05L18.5 9l.69 1.95zm-2.28 4.95c.83-.08 1.72 1.1 1.19 1.85-.32.45-.66.87-1.08 1.27C15.17 23 8.84 23 4.94 19.07c-3.91-3.9-3.91-10.24 0-14.14.4-.4.82-.76 1.27-1.08.75-.53 1.93.36 1.85 1.19-.27 2.86.69 5.83 2.89 8.02a9.96 9.96 0 0 0 8.02 2.89m-1.64 2.02a12.08 12.08 0 0 1-7.8-3.47c-2.17-2.19-3.33-5-3.49-7.82-2.81 3.14-2.7 7.96.31 10.98 3.02 3.01 7.84 3.12 10.98.31"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="搜索" placeholder="搜索" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="查找">
+        
+        <button type="reset" class="md-search__icon md-icon" title="清空当前内容" aria-label="清空当前内容" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            正在初始化搜索引擎
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/zhaoyang97/Paper-Notes" title="前往仓库" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    Star on GitHub
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+
+<nav class="md-tabs" aria-label="标签" data-md-component="tabs" data-nosnippet>
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  🏠 首页
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../CVPR2026/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  📷 CVPR2026
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../" class="md-tabs__link">
+          
+  
+  
+    
+  
+  🔬 ICLR2026
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../ECCV2026/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  🎞️ ECCV2026
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../ACL2026/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  💬 ACL2026
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../ICML2026/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  🧪 ICML2026
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../AAAI2026/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  🤖 AAAI2026
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../NeurIPS2025/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  🧠 NeurIPS2025
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../ICCV2025/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  📹 ICCV2025
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../ICML2025/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  🧪 ICML2025
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../ACL2025/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  💬 ACL2025
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../CVPR2025/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  📷 CVPR2025
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../ECCV2024/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  🎞️ ECCV2024
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+  
+    
+    
+    <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" data-nosnippet >
+      <div class="md-sidebar__scrollwrap">
+        <div class="md-sidebar__inner">
+          
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="导航栏" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../../.." title="📚 AI Paper Notes" class="md-nav__button md-logo" aria-label="📚 AI Paper Notes" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 21.5c-1.35-.85-3.8-1.5-5.5-1.5-1.65 0-3.35.3-4.75 1.05-.1.05-.15.05-.25.05-.25 0-.5-.25-.5-.5V6c.6-.45 1.25-.75 2-1 1.11-.35 2.33-.5 3.5-.5 1.95 0 4.05.4 5.5 1.5 1.45-1.1 3.55-1.5 5.5-1.5 1.17 0 2.39.15 3.5.5.75.25 1.4.55 2 1v14.6c0 .25-.25.5-.5.5-.1 0-.15 0-.25-.05-1.4-.75-3.1-1.05-4.75-1.05-1.7 0-4.15.65-5.5 1.5M12 8v11.5c1.35-.85 3.8-1.5 5.5-1.5 1.2 0 2.4.15 3.5.5V7c-1.1-.35-2.3-.5-3.5-.5-1.7 0-4.15.65-5.5 1.5m1 3.5c1.11-.68 2.6-1 4.5-1 .91 0 1.76.09 2.5.28V9.23c-.87-.15-1.71-.23-2.5-.23q-2.655 0-4.5.84zm4.5.17c-1.71 0-3.21.26-4.5.79v1.69c1.11-.65 2.6-.99 4.5-.99 1.04 0 1.88.08 2.5.24v-1.5c-.87-.16-1.71-.23-2.5-.23m2.5 2.9c-.87-.16-1.71-.24-2.5-.24-1.83 0-3.33.27-4.5.8v1.69c1.11-.66 2.6-.99 4.5-.99 1.04 0 1.88.08 2.5.24z"/></svg>
+
+    </a>
+    📚 AI Paper Notes
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/zhaoyang97/Paper-Notes" title="前往仓库" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    Star on GitHub
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    🏠 首页
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+      
+        
+        
+      
+    
+    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
+      
+        
+  
+  
+  
+    <a href="../../../CVPR2026/" class="md-nav__link">
+      
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    📷 CVPR2026
+  
+
+    
+  </span>
+  
+  
+
+      
+        <span class="md-nav__icon md-icon"></span>
+      
+    </a>
+  
+
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+      
+        
+        
+      
+    
+    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
+      
+        
+  
+  
+  
+    <a href="../../" class="md-nav__link">
+      
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    🔬 ICLR2026
+  
+
+    
+  </span>
+  
+  
+
+      
+        <span class="md-nav__icon md-icon"></span>
+      
+    </a>
+  
+
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+      
+        
+        
+      
+    
+    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
+      
+        
+  
+  
+  
+    <a href="../../../ECCV2026/" class="md-nav__link">
+      
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    🎞️ ECCV2026
+  
+
+    
+  </span>
+  
+  
+
+      
+        <span class="md-nav__icon md-icon"></span>
+      
+    </a>
+  
+
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+      
+        
+        
+      
+    
+    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
+      
+        
+  
+  
+  
+    <a href="../../../ACL2026/" class="md-nav__link">
+      
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    💬 ACL2026
+  
+
+    
+  </span>
+  
+  
+
+      
+        <span class="md-nav__icon md-icon"></span>
+      
+    </a>
+  
+
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+      
+        
+        
+      
+    
+    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
+      
+        
+  
+  
+  
+    <a href="../../../ICML2026/" class="md-nav__link">
+      
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    🧪 ICML2026
+  
+
+    
+  </span>
+  
+  
+
+      
+        <span class="md-nav__icon md-icon"></span>
+      
+    </a>
+  
+
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+      
+        
+        
+      
+    
+    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
+      
+        
+  
+  
+  
+    <a href="../../../AAAI2026/" class="md-nav__link">
+      
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    🤖 AAAI2026
+  
+
+    
+  </span>
+  
+  
+
+      
+        <span class="md-nav__icon md-icon"></span>
+      
+    </a>
+  
+
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+      
+        
+        
+      
+    
+    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
+      
+        
+  
+  
+  
+    <a href="../../../NeurIPS2025/" class="md-nav__link">
+      
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    🧠 NeurIPS2025
+  
+
+    
+  </span>
+  
+  
+
+      
+        <span class="md-nav__icon md-icon"></span>
+      
+    </a>
+  
+
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+      
+        
+        
+      
+    
+    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
+      
+        
+  
+  
+  
+    <a href="../../../ICCV2025/" class="md-nav__link">
+      
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    📹 ICCV2025
+  
+
+    
+  </span>
+  
+  
+
+      
+        <span class="md-nav__icon md-icon"></span>
+      
+    </a>
+  
+
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+      
+        
+        
+      
+    
+    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
+      
+        
+  
+  
+  
+    <a href="../../../ICML2025/" class="md-nav__link">
+      
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    🧪 ICML2025
+  
+
+    
+  </span>
+  
+  
+
+      
+        <span class="md-nav__icon md-icon"></span>
+      
+    </a>
+  
+
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+      
+        
+        
+      
+    
+    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
+      
+        
+  
+  
+  
+    <a href="../../../ACL2025/" class="md-nav__link">
+      
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    💬 ACL2025
+  
+
+    
+  </span>
+  
+  
+
+      
+        <span class="md-nav__icon md-icon"></span>
+      
+    </a>
+  
+
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+      
+        
+        
+      
+    
+    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
+      
+        
+  
+  
+  
+    <a href="../../../CVPR2025/" class="md-nav__link">
+      
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    📷 CVPR2025
+  
+
+    
+  </span>
+  
+  
+
+      
+        <span class="md-nav__icon md-icon"></span>
+      
+    </a>
+  
+
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+      
+        
+        
+      
+    
+    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
+      
+        
+  
+  
+  
+    <a href="../../../ECCV2024/" class="md-nav__link">
+      
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    🎞️ ECCV2024
+  
+
+    
+  </span>
+  
+  
+
+      
+        <span class="md-nav__icon md-icon"></span>
+      
+    </a>
+  
+
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+        </div>
+      </div>
+    </div>
+  
+  
+    
+    
+    <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" data-nosnippet >
+      <div class="md-sidebar__scrollwrap">
+        <div class="md-sidebar__inner">
+          
+
+<nav class="md-nav md-nav--secondary" aria-label="目录">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      目录
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        一句话总结
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        研究背景与动机
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        方法详解
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_6" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        实验关键数据
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_9" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        亮点与洞察
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_10" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        局限与展望
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_11" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        相关工作与启发
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_12" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        评分
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+        </div>
+      </div>
+    </div>
+  
+
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+
+  
+  
+  
+  
+<aside class="paper-seo-summary" aria-label="论文摘要">
+  <p class="paper-seo-summary__desc">[ICLR 2026][优化/理论][车辆路径问题] 作者发现迭代式 VRP 求解器在搜索过程中大量边其实早已"稳定不变"、反复优化它们纯属浪费算力，于是提出 First-Segment-Then-Aggregate（FSTA）分解框架把稳定段聚合成超节点、只让求解器去啃不稳定部分，再用神经网络 L2Seg（含自回归、非自回归及二者协同三种变体）学会判断哪些段该聚合，从而把 LKH-3/LNS/L2D 等 SOTA 求解器加速 2~7 倍。</p>
+  
+  <p class="paper-seo-summary__tags">标签：ICLR 2026 · 优化/理论 · 车辆路径问题 · 神经组合优化 · 迭代搜索加速 · 问题分解 · 自回归/非自回归模型</p>
+  
+</aside>
+  
+
+
+                  
+
+  <nav class="md-tags" >
+    
+      
+      
+      
+      
+        <span class="md-tag">ICLR 2026</span>
+      
+    
+      
+      
+      
+      
+        <span class="md-tag">优化/理论</span>
+      
+    
+      
+      
+      
+      
+        <span class="md-tag">车辆路径问题</span>
+      
+    
+      
+      
+      
+      
+        <span class="md-tag">神经组合优化</span>
+      
+    
+      
+      
+      
+      
+        <span class="md-tag">迭代搜索加速</span>
+      
+    
+      
+      
+      
+      
+        <span class="md-tag">问题分解</span>
+      
+    
+      
+      
+      
+      
+        <span class="md-tag">自回归/非自回归模型</span>
+      
+    
+  </nav>
+
+
+  
+  
+
+
+<h1 id="learning-to-segment-for-vehicle-routing-problems">Learning to Segment for Vehicle Routing Problems<a class="headerlink" href="#learning-to-segment-for-vehicle-routing-problems" title="Permanent link">&para;</a></h1>
+<p><strong>会议</strong>: ICLR 2026<br />
+<strong>OpenReview</strong>: <a href="https://openreview.net/forum?id=pN261iTKvr">https://openreview.net/forum?id=pN261iTKvr</a><br />
+<strong>代码</strong>: 待确认<br />
+<strong>领域</strong>: optimization<br />
+<strong>关键词</strong>: 车辆路径问题, 神经组合优化, 迭代搜索加速, 问题分解, 自回归/非自回归模型  </p>
+<h2 id="_1">一句话总结<a class="headerlink" href="#_1" title="Permanent link">&para;</a></h2>
+<p>作者发现迭代式 VRP 求解器在搜索过程中大量边其实早已"稳定不变"、反复优化它们纯属浪费算力，于是提出 First-Segment-Then-Aggregate（FSTA）分解框架把稳定段聚合成超节点、只让求解器去啃不稳定部分，再用神经网络 L2Seg（含自回归、非自回归及二者协同三种变体）学会判断哪些段该聚合，从而把 LKH-3/LNS/L2D 等 SOTA 求解器加速 2~7 倍。</p>
+<h2 id="_2">研究背景与动机<a class="headerlink" href="#_2" title="Permanent link">&para;</a></h2>
+<p><strong>领域现状</strong>：车辆路径问题（VRP）是物流、网约车等场景的核心 NP-hard 组合优化问题，目前最强的求解器——无论是经典启发式（LKH-3、HGS、LNS）还是神经求解器（LEHD、L2D 等）——几乎都依赖<strong>迭代搜索</strong>（ruin-and-repair 式的局部搜索）来逐步精炼解。</p>
+<p><strong>现有痛点</strong>：作者观察到一个被普遍忽视的现象——随着搜索推进，<strong>解中很大一部分边会"稳定"下来</strong>（即在连续若干轮求解调用之间始终保留在解里不再变化），尤其是大容量、长子路径的大规模 VRP。例如相邻子路径的内部边往往固定不动，只有边界边在频繁组合变化。求解器却对这些早已稳定的边一遍遍重复优化，造成大量冗余计算，严重拖累可扩展性。</p>
+<p><strong>核心矛盾</strong>：稳定性其实可以从客户空间分布和解的结构性质中端到端学出来，但<strong>现有求解器没有任何机制去识别并利用这种稳定性</strong>——它们要么全局重优化，要么靠手工规则（k 近邻裁剪、有界邻域）盲目缩小搜索空间，无法数据驱动地分辨"哪段稳、哪段不稳"。</p>
+<p><strong>本文目标</strong>：让求解器学会识别稳定段并跳过它们，把算力集中在真正需要重优化的不稳定部分上，且这套加速要<strong>与具体求解器无关</strong>（经典/神经/混合都能挂载）、并能覆盖多种 VRP 变体。</p>
+<p><strong>核心 idea</strong>：<strong>先分段后聚合（FSTA）</strong> + <strong>学习分段（L2Seg）</strong>。FSTA 负责"机制"——把稳定段聚合成固定超节点、缩小问题规模、只重优化不稳定部分，并在理论上证明解的可行性与单调性得以保持；L2Seg 负责"大脑"——用神经网络判断哪些边不稳定，且首次让<strong>自回归（AR）与非自回归（NAR）模型协同决策</strong>，兼顾全局视野与局部精度。</p>
+<h2 id="_3">方法详解<a class="headerlink" href="#_3" title="Permanent link">&para;</a></h2>
+<h3 id="_4">整体框架<a class="headerlink" href="#_4" title="Permanent link">&para;</a></h3>
+<p>方法分两层。下层 FSTA 是一个<strong>求解器无关的分解机制</strong>：给定当前解，先识别出不稳定边、断开它们，把剩下的稳定连续节点组成段（segment），每段聚合成一个或两个携带合并属性（总需求、min/max 时间窗等）的超节点，得到规模更小的子问题，交给任意 backbone 求解器重优化，最后把超节点展开还原回原解。上层 L2Seg 是一个<strong>编码器-解码器神经网络</strong>，专门解决 FSTA 里"哪些边该断"这个组合判断难题，提供 NAR（一次性全局预测）、AR（序列化局部精修）、SYN（二者协同）三种变体。</p>
+<pre class="mermaid"><code>flowchart LR
+    A[当前解 R] --&gt; B[L2Seg 预测不稳定边]
+    B --&gt; C[断边并把稳定段分组]
+    C --&gt; D[每段聚合成超节点 → 缩小问题 P̃]
+    D --&gt; E[backbone 求解器重优化 P̃ → R̃+]
+    E --&gt; F[展开超节点还原 → 新解 R+]
+    F --&gt; A</code></pre>
+<h3 id="_5">关键设计<a class="headerlink" href="#_5" title="Permanent link">&para;</a></h3>
+<p><strong>1. FSTA 分解：用超节点固定稳定段，且理论保证解不退化。</strong> 这是整套方法的机制基座。把 CVRP 的解记为路径集合 <span class="arithmatex">\(\mathcal{R}=\{R_1,R_2,\dots\}\)</span>，每条路径是 <span class="arithmatex">\(R_i=(x_0\to x_1^i\to\dots\to x_0)\)</span>。一旦识别出不稳定边集合（与 depot 相连的边强制纳入以保证 depot 合法），就断开它们，把每条路径切成若干不相交的稳定段 <span class="arithmatex">\(S^i_{j,k}=(x^i_j\to\dots\to x^i_k)\)</span>，每段用一个超节点 <span class="arithmatex">\(\tilde{S}^i_{j,k}=\{\tilde{x}^i_{j,k}\}\)</span>（或两个端点超节点）代替，其属性是段内属性之和（如需求 <span class="arithmatex">\(d^i_{j,k}=d^i_j+\dots+d^i_k\)</span>）。这样原问题 <span class="arithmatex">\(P\)</span> 收缩成节点更少的 <span class="arithmatex">\(\tilde{P}\)</span>，求解器只在不稳定部分上做局部搜索，自然更快。关键是作者证明了两条定理：<strong>可行性</strong>（聚合解 <span class="arithmatex">\(\tilde{\mathcal{R}}_+\)</span> 对 <span class="arithmatex">\(\tilde{P}\)</span> 可行 ⟹ 还原解 <span class="arithmatex">\(\mathcal{R}_+\)</span> 对原问题可行）与<strong>单调性</strong>（若 <span class="arithmatex">\(f(\tilde{\mathcal{R}}^1_+)\le f(\tilde{\mathcal{R}}^2_+)\)</span> 则 <span class="arithmatex">\(f(\mathcal{R}^1_+)\le f(\mathcal{R}^2_+)\)</span>），意味着在缩小问题上改进一定映射为原问题上的改进，且该结论可推广到 CVRP、VRPTW、VRPB、1-VRPPD 等多种变体。正因为有这层保证，FSTA 才能放心地"冻结"大段解而不损失最优性。</p>
+<p><strong>2. 编码器统一刻画图级与路径级结构。</strong> AR 与 NAR 共享同一编码器。输入特征上，作者专门设计了两类有判别力的特征——节点相对 depot 的<strong>角度（angularity）</strong>与<strong>内部性（internality，最近邻里属于同路径的比例）</strong>——以更好地区分稳定/不稳定边；边则区分"当前解中的边"和"节点到 k 近邻的边"两种类型。节点初始嵌入由 MLP 嵌入与绝对位置编码拼接而成 <span class="arithmatex">\(h^{init}_i=\text{Concat}(h^{MLP}_i,h^{POS}_i)\)</span>，先过带掩码的 Transformer 层（掩码阻止不同路径的节点互相计算，从而注入"当前解"的局部结构），再过若干层 GAT 注入全局图信息 <span class="arithmatex">\(H^{GNN}=\text{GNN}(H^{TFM},E)\)</span>。这样得到的节点嵌入同时承载了解结构与空间分布，为两种解码器服务。</p>
+<p><strong>3. NAR 与 AR 解码器各司其职、互补短板。</strong> NAR 解码器极简——一个 MLP+Sigmoid 一次性输出每个节点不稳定的概率 <span class="arithmatex">\(p^{NAR}=\text{MLP}_{NAR}(H^{GNN})\)</span>，全局视野好、速度快，但缺乏条件建模，常把某条不稳定边周围的边"一锅端"全标成不稳定，局部不够精细。AR 解码器则模仿经典局部搜索"删 k 条边再接 k 条边"的行为，<strong>交替进行删除阶段与插入阶段</strong>：删除阶段（<span class="arithmatex">\(t=2k\)</span>）基于目标节点选出一条不稳定边（仅标记不删除），插入阶段（<span class="arithmatex">\(t=2k+1\)</span>）从上一条边的端点出发选一条不在解中的伪边作为"桥"通向下一个不稳定区域，最终 <span class="arithmatex">\(E_{unstable}=\{e_{\pi_0,\pi_1},e_{\pi_2,\pi_3},\dots\}\)</span>。两阶段都用 GRU 编码序列上下文、用多头注意力做节点选择，并考虑动作空间大小用浅层（删除 <span class="arithmatex">\(L^{MHA}_{delete}=1\)</span>）/深层（插入 <span class="arithmatex">\(L^{MHA}_{insert}=4\)</span>）解码器，还引入可学习终止候选 <span class="arithmatex">\(h_{end}\)</span> 让模型自行决定不稳定边数量。AR 局部精度高，但面对分散在远处的多个不稳定区域时全局视野不足。</p>
+<p><strong>4. SYN 协同：NAR 圈定范围、AR 精修，让两种模型联合决策。</strong> 这是论文最具开创性的一点——首次在神经组合优化中让 AR 与 NAR 联合决策。SYN 推理分四步：先把问题按相邻子路径对拆成约 <span class="arithmatex">\(|\mathcal{R}|\)</span> 个子问题；对每个子问题用 NAR 一次性预测全局不稳定节点 <span class="arithmatex">\(\hat{y}^{NAR}=\{x_i\mid p^{NAR}_i\ge\eta\}\)</span>（<span class="arithmatex">\(\eta=0.6\)</span>）；再对 NAR 预测出的不稳定节点做 K-means 聚成 <span class="arithmatex">\(n_{KMEANS}=3\)</span> 个簇、每簇取概率最高的节点作为 AR 解码的<strong>初始目标节点</strong>（既缩小 AR 的搜索范围、又避免在相邻节点上重复解码）；最后由 AR 在这些初始点附近局部精修出不稳定边。训练上采用<strong>模仿学习</strong>：用迭代求解器作 look-ahead 启发式，把一轮重优化前后变化的边 <span class="arithmatex">\(E_{diff}=(E_R\setminus E_{R_+})\cup(E_{R_+}\setminus E_R)\)</span> 的端点标为不稳定节点；NAR 用加权二元交叉熵（<span class="arithmatex">\(w_{pos}&gt;1\)</span> 平衡正负样本）、AR 用加权交叉熵（<span class="arithmatex">\(w_{insert}&gt;w_{delete}\)</span> 平衡两阶段），AR 的标签由 <span class="arithmatex">\(E_{diff}\)</span> 诱导的连通分量经深度优先搜索展成"删除-插入"交替的节点序列。NAR 的"全局粗筛"恰好补上 AR 的全局短板，AR 的"局部精修"又纠正 NAR 的过度标记，二者协同因而最优。</p>
+<h2 id="_6">实验关键数据<a class="headerlink" href="#_6" title="Permanent link">&para;</a></h2>
+<h3 id="backbone-cvrp">主实验：加速三种 backbone 求解器（大容量 CVRP）<a class="headerlink" href="#backbone-cvrp" title="Permanent link">&para;</a></h3>
+<p>在 100 个大容量 CVRP 实例上，三种变体都能稳定提升每个 backbone，且 SYN 最好（Gain 相对各自 backbone）：</p>
+<table>
+<thead>
+<tr>
+<th>方法</th>
+<th>CVRP2k Obj.↓</th>
+<th>Gain↑</th>
+<th>CVRP5k Obj.↓</th>
+<th>Gain↑</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>LKH-3</td>
+<td>45.24</td>
+<td>0.00%</td>
+<td>65.34</td>
+<td>0.00%</td>
+</tr>
+<tr>
+<td>L2Seg-NAR-LKH-3</td>
+<td>44.34</td>
+<td>1.99%</td>
+<td>64.72</td>
+<td>0.95%</td>
+</tr>
+<tr>
+<td>L2Seg-AR-LKH-3</td>
+<td>44.23</td>
+<td>2.23%</td>
+<td>64.67</td>
+<td>1.03%</td>
+</tr>
+<tr>
+<td><strong>L2Seg-SYN-LKH-3</strong></td>
+<td><strong>43.92</strong></td>
+<td><strong>2.92%</strong></td>
+<td><strong>64.12</strong></td>
+<td><strong>1.87%</strong></td>
+</tr>
+<tr>
+<td>LNS</td>
+<td>44.92</td>
+<td>0.00%</td>
+<td>64.69</td>
+<td>0.00%</td>
+</tr>
+<tr>
+<td><strong>L2Seg-SYN-LNS</strong></td>
+<td><strong>43.42</strong></td>
+<td><strong>3.34%</strong></td>
+<td><strong>63.94</strong></td>
+<td><strong>1.16%</strong></td>
+</tr>
+<tr>
+<td>L2D</td>
+<td>43.69</td>
+<td>0.00%</td>
+<td>64.21</td>
+<td>0.00%</td>
+</tr>
+<tr>
+<td><strong>L2Seg-SYN-L2D</strong></td>
+<td><strong>43.35</strong></td>
+<td><strong>0.78%</strong></td>
+<td><strong>63.89</strong></td>
+<td><strong>0.50%</strong></td>
+</tr>
+</tbody>
+</table>
+<p>搜索曲线显示 SYN 带来 <strong>2~7 倍加速</strong>，且加速后的弱求解器能反超未加速的强求解器（如 LKH-3+SYN 超过原版 LNS）。</p>
+<h3 id="sota-gap-hgs">对比 SOTA 经典/神经基线（gap 相对 HGS，越低越好）<a class="headerlink" href="#sota-gap-hgs" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>方法</th>
+<th>CVRP1k Gap↓</th>
+<th>CVRP2k Gap↓</th>
+<th>CVRP5k Gap↓</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>HGS</td>
+<td>0.00%</td>
+<td>0.00%</td>
+<td>0.00%</td>
+</tr>
+<tr>
+<td>LKH-3</td>
+<td>4.32%</td>
+<td>1.29%</td>
+<td>39.22%</td>
+</tr>
+<tr>
+<td>SIL</td>
+<td>1.94%</td>
+<td>-0.17%</td>
+<td>-2.33%</td>
+</tr>
+<tr>
+<td>L2D</td>
+<td>2.11%</td>
+<td>0.42%</td>
+<td>0.22%</td>
+</tr>
+<tr>
+<td>NDS</td>
+<td>-0.01%</td>
+<td>-1.91%</td>
+<td>—</td>
+</tr>
+<tr>
+<td><strong>L2Seg-SYN-L2D</strong></td>
+<td><strong>0.07%</strong></td>
+<td><strong>-2.01%</strong></td>
+<td><strong>-3.55%</strong></td>
+</tr>
+</tbody>
+</table>
+<p>VRPTW 上同样全面领先，且优势随规模增大（VRPTW5k 上 L2Seg-SYN-L2D 达 -3.14% gap）。</p>
+<h3 id="_7">消融实验<a class="headerlink" href="#_7" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>方法</th>
+<th>CVRP2k</th>
+<th>CVRP5k</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>LNS（backbone）</td>
+<td>44.92</td>
+<td>64.69</td>
+</tr>
+<tr>
+<td>Random FSTA (40%)</td>
+<td>46.24</td>
+<td>66.72</td>
+</tr>
+<tr>
+<td>Random FSTA (60%)</td>
+<td>46.89</td>
+<td>65.92</td>
+</tr>
+<tr>
+<td>L2Seg-SYN w/o 增强特征</td>
+<td>43.65</td>
+<td>64.22</td>
+</tr>
+<tr>
+<td><strong>L2Seg-SYN</strong></td>
+<td><strong>43.42</strong></td>
+<td><strong>63.94</strong></td>
+</tr>
+</tbody>
+</table>
+<h3 id="_8">关键发现<a class="headerlink" href="#_8" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>随机分段反而变差</strong>（Random FSTA 比 backbone 还高），说明"分得准"至关重要，盲目聚合会破坏解——这正是需要学习的理由。</li>
+<li><strong>增强特征（角度/内部性）有明确贡献</strong>，去掉后掉点。</li>
+<li><strong>SYN &gt; AR &gt; NAR</strong> 的稳定排序印证了"NAR 全局粗筛 + AR 局部精修"的互补逻辑。</li>
+<li>L2Seg 对聚类客户、异质需求等更真实分布也能 zero-shot 迁移（比 LNS 提升 0.82%~3.10%），具备实用泛化性。</li>
+</ul>
+<h2 id="_9">亮点与洞察<a class="headerlink" href="#_9" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>从"求解器重复劳动"切入，把加速问题重述为一个学习问题</strong>：识别稳定段而非直接构造解，视角新颖且实用。</li>
+<li><strong>机制（FSTA）与学习（L2Seg）解耦</strong>：FSTA 带可行性/单调性理论保证，使"冻结大段解"在数学上安全；L2Seg 只负责判断，二者职责清晰。</li>
+<li><strong>求解器无关、即插即用</strong>：能挂在经典 LKH-3、分解框架 LNS、学习引导混合 L2D 上，且对越弱的 backbone 收益越大，工程价值高。</li>
+<li><strong>首次让 AR 与 NAR 联合决策</strong>：以往 NCO 里二者多用于"NAR 分问题、AR 解子问题"的分治，这里改成"NAR 圈范围、AR 精修同一判断任务"，提供了一种新的协同范式。</li>
+</ul>
+<h2 id="_10">局限与展望<a class="headerlink" href="#_10" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>依赖 look-ahead 求解器生成标签的模仿学习</strong>：标签质量受教师求解器上限约束，未探索强化学习等可能突破教师的训练方式。</li>
+<li><strong>稳定性假设偏静态</strong>：方法建立在"相邻两路径之间发生精炼"的经验观察上，对结构剧烈变动或非局部式搜索的求解器是否同样成立，文中讨论有限。</li>
+<li><strong>超参（<span class="arithmatex">\(\eta=0.6\)</span>、<span class="arithmatex">\(n_{KMEANS}=3\)</span>）需人工设定</strong>，跨问题规模/分布是否需重调未充分展开。</li>
+<li>主要在 CVRP/VRPTW 上验证，更多复杂约束变体（如取送货、多车型）虽有理论覆盖，但大规模实证仍待补充。</li>
+</ul>
+<h2 id="_11">相关工作与启发<a class="headerlink" href="#_11" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>VRP 求解器</strong>：经典精确法/启发式（LKH-3、HGS、LNS）与神经构造/局部搜索求解器（LEHD、POMO、L2D 等），本文指出它们都忽视了迭代搜索中的冗余计算。</li>
+<li><strong>大规模 VRP 分解</strong>：手工 LNS 有界邻域、子路径分组、空间分解、超图分解等。FSTA 区别在于<strong>数据驱动地做边级、跨子路径的全局分解</strong>，而非 LNS 的固定有界邻域或 L2D 的子路径级选择。</li>
+<li><strong>AR 与 NAR 模型</strong>：NAR 擅长全局热力图预测但难建模约束依赖，AR 擅长序列依赖但易丢全局结构；本文把二者的互补性用于"联合判断不稳定段"，是对该方向的新拓展。</li>
+<li><strong>启发</strong>：这种"识别并冻结已收敛部分、只优化活跃部分"的思路，对其他迭代式组合优化乃至更广的迭代算法加速（如带稳定性先验的求解器预热）有迁移潜力。</li>
+</ul>
+<h2 id="_12">评分<a class="headerlink" href="#_12" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>新颖性</strong>: ⭐⭐⭐⭐⭐ — "学习识别稳定段以加速迭代搜索"是未被探索的视角，且首创 AR/NAR 联合决策范式，配合 FSTA 的理论保证，原创性强。</li>
+<li><strong>实验充分度</strong>: ⭐⭐⭐⭐ — 覆盖三种 backbone、CVRP/VRPTW 多规模、SOTA 经典/神经/分治基线、消融与泛化齐全；扣分在于复杂约束变体的大规模实证较少、训练范式较单一。</li>
+<li><strong>写作质量</strong>: ⭐⭐⭐⭐ — 动机观察清晰、方法分层讲解到位、图表充分；公式与符号略密集，AR 解码细节对初读者门槛偏高。</li>
+<li><strong>价值</strong>: ⭐⭐⭐⭐⭐ — 求解器无关、即插即用、2~7 倍加速且对弱求解器收益更大，对大规模物流路径优化有直接落地价值。</li>
+</ul>
+
+
+
+
+
+
+
+  
+  
+
+
+
+
+
+
+                
+
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  回到页面顶部
+</button>
+        
+      </main>
+      
+        
+<footer class="md-footer" data-nosnippet>
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      
+<div class="md-copyright personal-attribution">
+  
+  <div class="personal-attribution__original">✨本站笔记由 AI 辅助生成，仅供学术参考，如有错误欢迎指正</div>
+  
+  <div class="personal-attribution__row">
+    <span class="personal-attribution__label">内容来源</span>
+    <span>基于 <a href="https://github.com/zhaoyang97/Paper-Notes">Paper-Notes · zhaoyang97</a></span>
+    <span class="personal-attribution__divider" aria-hidden="true">·</span>
+    <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a>
+    <span class="personal-attribution__divider" aria-hidden="true">·</span>
+    <a href="../../../MyNotes/about/">版权与来源说明</a>
+  </div>
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+      <div class="md-progress" data-md-component="progress" role="progressbar"></div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../../..", "features": ["navigation.instant", "navigation.instant.progress", "navigation.tabs", "navigation.sections", "navigation.indexes", "navigation.top", "navigation.prune", "content.code.copy", "toc.follow"], "search": "../../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "\u5df2\u590d\u5236", "clipboard.copy": "\u590d\u5236", "search.result.more.one": "\u5728\u8be5\u9875\u4e0a\u8fd8\u6709 1 \u4e2a\u7b26\u5408\u6761\u4ef6\u7684\u7ed3\u679c", "search.result.more.other": "\u5728\u8be5\u9875\u4e0a\u8fd8\u6709 # \u4e2a\u7b26\u5408\u6761\u4ef6\u7684\u7ed3\u679c", "search.result.none": "\u6ca1\u6709\u627e\u5230\u7b26\u5408\u6761\u4ef6\u7684\u7ed3\u679c", "search.result.one": "\u627e\u5230 1 \u4e2a\u7b26\u5408\u6761\u4ef6\u7684\u7ed3\u679c", "search.result.other": "# \u4e2a\u7b26\u5408\u6761\u4ef6\u7684\u7ed3\u679c", "search.result.placeholder": "\u952e\u5165\u4ee5\u5f00\u59cb\u641c\u7d22", "search.result.term.missing": "\u7f3a\u5c11", "select.version": "\u9009\u62e9\u5f53\u524d\u7248\u672c"}, "version": null}</script>
+    
+    
+
+      <script src="../../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+        <script src="../../../javascripts/title-link.js"></script>
+      
+        <script src="../../../javascripts/mathjax.js"></script>
+      
+        <script src="https://unpkg.com/mathjax@3.2.2/es5/tex-mml-chtml.js"></script>
+      
+        <script src="../../../javascripts/search-page.js"></script>
+      
+    
+
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/3.2.2/es5/tex-mml-chtml.min.js"></script>
+
+
+  </body>
+</html>
